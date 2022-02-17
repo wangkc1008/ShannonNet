@@ -1,3 +1,4 @@
+#include "time.h"
 #include "crc32c/crc32c.h"
 #include "glog/logging.h"
 #include "src/LWE.hpp"
@@ -58,8 +59,13 @@ int main(int argc, char **argv) {
   // LOG(WARNING) << "Hello World";
   // test03();
   std::cout << sizeof(long uint) << std::endl;
-  shannonnet::LWE<uint>::ptr lwe(new shannonnet::LWE<uint>());
-  lwe->generate_secret_file();
+  typedef uint16_t T;
+  std::cout << sizeof(T) << std::endl;
+  time_t startTimestamp = time(nullptr);
+  shannonnet::LWE<T>::ptr lwe(new shannonnet::LWE<T>());
+  // lwe->generate_secret_file();
+  time_t endTimestamp = time(nullptr);
+  std::cout << endTimestamp - startTimestamp << std::endl;
   // test05();
   return 0;
 }

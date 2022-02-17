@@ -3,78 +3,58 @@ project(ShannonNet)
 
 # 显示构建过程中更详细的错误信息
 set(CMAKE_VERBOSE_MAKEFILE ON)
-set(CMAKE_CXX_FLAGS "$ENV{CXXFLAGS} -rdynamic -O3 -g -std=c++11 -pthread -Wall -Werror -Wno-unused-function -Wno-unused-local-typedefs -Wno-unused-variable -Wno-write-strings -Wno-unused-result")
+set(CMAKE_CXX_FLAGS "$ENV{CXXFLAGS} -rdynamic -O3 -g -std=c++14 -pthread -Wall -Werror -Wno-unused-function -Wno-unused-local-typedefs -Wno-unused-variable -Wno-write-strings -Wno-unused-result -Wno-sign-compare")
 
-# 去哪个路径下找头文件 默认去/usr/include找头文件 相当于编译时的-I
-include_directories(.)  # 表示当前目录
-message(${PROJECT_SOURCE_DIR})
-# link_directories() 去哪个路径下找链接的库文件 相当于编译时的-L
+# 引入conan
+set(CONAN_DISABLE_CHECK_COMPILER ON)
+include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
+conan_basic_setup()
 
+# 可执行文件保存路径
+SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin/)
+# 库文件保存路径
+SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib/)
+SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib/)
+
+# 添加.cc文件
 set(LIB_SRC
-    src/utils/thread.cc
     src/utils/path.cc
-    src/utils/utils.cc)
+    src/utils/utils.cc
+)
 
-# 生成动态库文件ShannonNet.so
-add_library(ShannonNet SHARED ${LIB_SRC})
-
-# 必须找到Eigen3包
-find_package(Eigen3 REQUIRED)
-# 找到后默认设置_INCLUDE_DIRS环境变量
-include_directories(${EIGEN3_INCLUDE_DIRS})
-# /usr/include/eigen3
-message(${EIGEN3_INCLUDE_DIRS})
-
-# 找到pthread的动态库文件 /usr/lib/x86_64-linux-gnu/libpthread.so
-find_library(PTHREAD pthread)
-message(${PTHREAD})
-# 找到crc32的动态库文件 /usr/local/lib/libcrc32c.so
-find_library(CRC32C crc32c)
-message(${CRC32C})
-# 找到oatpp的静态库文件 /usr/local/lib/oatpp-1.3.0/liboatpp.a
-find_library(OATPP oatpp)
-message(${OATPP})
-
-find_library(GLOG 0.6.0 glog)
-
-# 构建子路径下的CMakeLists.txt
-# add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/glog)
-# message(${GLOG_INCLUDE_DIRS})
-
-# 设置变量LIBS 包括前面的所有库文件
-set(LIBS
-    ShannonNet
-    pthread
-    crc32c
-    glog
-    oatpp)
+include_directories(${CMAKE_SOURCE_DIR}/)
+add_library(${PROJECT_NAME} STATIC ${LIB_SRC})
+# 生成libShannonNet.a需要链接其他库文件
+target_link_libraries(${PROJECT_NAME} ${CONAN_LIBS})
 
 # 由tests/lwe_test.cc生成可执行文件lwe_test
 add_executable(lwe_test tests/lwe_test.cc)
 # 提醒编译器lwe_test依赖于ShannonNet，需要先生成ShannonNet.so再去生成lwe_test
-add_dependencies(lwe_test ShannonNet)
+add_dependencies(lwe_test ${PROJECT_NAME})
+# target_include_directories(lwe_test PRIVATE ${CMAKE_SOURCE_DIR}/)
 # lwe_test生成需要链接LIBS中的动态/静态库文件相当于编译时的-l
-target_link_libraries(lwe_test ${LIBS})
+target_link_libraries(lwe_test ${PROJECT_NAME})
 
-# add_executable(server_test tests/server_test.cc)
-# add_dependencies(server_test ShannonNet)
-# target_link_libraries(server_test ${LIBS})
+add_executable(redis_test tests/redis_test.cc)
+add_dependencies(redis_test ${PROJECT_NAME})
+target_link_libraries(redis_test ${PROJECT_NAME})
 
-# add_executable(client_test tests/client_test.cc)
-# add_dependencies(client_test ShannonNet)
-# target_link_libraries(client_test ${LIBS})
+add_executable(json_test tests/json_test.cc)
+add_dependencies(json_test ${PROJECT_NAME})
+target_link_libraries(json_test ${PROJECT_NAME})
 
-# add_executable(oatpp_test tests/oatpp_test.cc)
-# add_dependencies(oatpp_test ShannonNet)
-# target_link_libraries(oatpp_test ${LIBS})
+add_executable(generator src/scripts/generateSecretFile.cc)
+add_dependencies(generator ${PROJECT_NAME})
+target_link_libraries(generator ${PROJECT_NAME})
 
 add_executable(oatpp_server src/ServerApp.cc)
-target_link_libraries(oatpp_server ${LIBS})
+add_dependencies(oatpp_server ${PROJECT_NAME})
+target_link_libraries(oatpp_server ${PROJECT_NAME})
 
 add_executable(oatpp_client src/ClientApp.cc)
-target_link_libraries(oatpp_client ${LIBS})
+add_dependencies(oatpp_client ${PROJECT_NAME})
+target_link_libraries(oatpp_client ${PROJECT_NAME})
 
-# 可执行文件保存路径
-SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
-# 库文件保存路径
-SET(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
+add_executable(shannonnet_init init/init.cc)
+add_dependencies(shannonnet_init ${PROJECT_NAME})
+target_link_libraries(shannonnet_init ${PROJECT_NAME})

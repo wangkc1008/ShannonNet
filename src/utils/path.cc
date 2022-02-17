@@ -7,7 +7,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "log.h"
+#include "glog/logging.h"
 
 namespace shannonnet {
 #if defined(_WIN32) || defined(_WIN64)

@@ -4,11 +4,17 @@
 #include "glog/logging.h"
 
 #include "src/config/config.h"
+#include "src/utils/path.h"
 
 namespace shannonnet {
 static void InitLog(const char *cmd) {
+  Path logSavePath(LOG_PATH);
+  if (!logSavePath.Exists()) {
+    LOG_IF(ERROR, logSavePath.CreateDirectories()) << "Failed to create dir, dir: " + logSavePath.ToString();
+  }
+  LOG(INFO) << "Log save path, dir: " + logSavePath.ToString();
   google::InitGoogleLogging(cmd);
-  FLAGS_log_dir = LOG_PATH;                // 日志路径
+  FLAGS_log_dir = logSavePath.ToString();  // 日志路径
   FLAGS_log_prefix = "";                   // 日志前缀
   FLAGS_alsologtostderr = true;            // 写入文件的同时是否std输出
   FLAGS_logbufsecs = 0;                    // 缓冲日志的最大秒数 0表示实时输出

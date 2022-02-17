@@ -17,10 +17,10 @@ class ClientComponent {
   OATPP_CREATE_COMPONENT(std::shared_ptr<oatpp::network::ClientConnectionProvider>, clientConnectionProvider)
   ([] {
     return oatpp::network::tcp::client::ConnectionProvider::createShared(
-      {std::string(CLIENT_ADDRESS), CLIENT_PORT, oatpp::network::Address::IP_4});
+      {CLIENT_ADDRESS, CLIENT_PORT, oatpp::network::Address::IP_4});
   }());
 
-  OATPP_CREATE_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper)
+  OATPP_CREATE_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, objectMapper)
   ([] { return oatpp::parser::json::mapping::ObjectMapper::createShared(); }());
 };
 }  // namespace shannonnet
