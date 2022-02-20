@@ -8,7 +8,7 @@
 void test() {
   typedef uint T;
   shannonnet::LWE<T>::ptr lwe(new shannonnet::LWE<T>());
-  std::vector<std::string> vec = lwe->encrypt("Hell");
+  std::vector<std::string> vec = lwe->encrypt("Hell", {});
   auto s = vec[0];
   auto b = vec[1];
   std::cout << sizeof(s) << std::endl;
@@ -18,7 +18,7 @@ void test() {
   std::cout << "--" << crc32c::Crc32c(s) << "--" << std::endl;
   std::cout << "--" << crc32c::Crc32c(b) << "--" << std::endl;
   std::string m;
-  m = lwe->decrypt(s, b);
+  m = lwe->decrypt({}, s, b);
   std::cout << m << std::endl;
 }
 

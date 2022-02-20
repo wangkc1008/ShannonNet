@@ -42,9 +42,9 @@ void clientRun() {
     // 判断是否要更新秘钥
     // 调预生成秘钥接口
     auto genSecretResponse = client->genSecret(shannonnet::CLIENT_NODE);
-    auto genSecretMsg =
-    genSecretResponse->readBodyToDto<oatpp::Object<shannonnet::MessageGenSecretDto>>(objectMapper); auto
-    jsonMapperData = jsonObjectMapper->writeToString(genSecretMsg); if (genSecretMsg->statusCode != 200) {
+    auto genSecretMsg = genSecretResponse->readBodyToDto<oatpp::Object<shannonnet::MessageGenSecretDto>>(objectMapper);
+    auto jsonMapperData = jsonObjectMapper->writeToString(genSecretMsg);
+    if (genSecretMsg->statusCode != 200) {
       LOG(ERROR) << "Api genSecret result error, msg: " << jsonMapperData->c_str();
       sleep(10);
       continue;
@@ -93,7 +93,7 @@ void clientRun() {
     }
 
     // 循环拉秘钥
-    shannonnet::LWE<S_Type>::ptr lwe(new shannonnet::LWE<S_Type>(runningSavePath.ToString()));
+    std::vector<S_Type> secretA = lwe->generateSecretA(runningSavePath.ToString());
     // 格式化进度消息
     auto logMsgFmt =
       (boost::format("serverNodeId => %u, clientNodeId => %u, index => %s") % serverNodeId % CLIENT_NODE % index).str();
@@ -126,7 +126,7 @@ void clientRun() {
         LOG_ASSERT(!secretS.empty());
         LOG_ASSERT(!secretB.empty());
         // 解密
-        auto secretData = lwe->decrypt(secretS, secretB);
+        auto secretData = lwe->decrypt(secretA, secretS, secretB);
         LOG_ASSERT(!secretData.empty());
 
         ofs.write(secretData.data(), secretData.size());
@@ -139,10 +139,11 @@ void clientRun() {
       LOG(INFO) << "Api client receive secret write over, logMsg: " << logMsgFmt << ", fileSize: " << fileSize;
 
       // 接收完成时
-      if (fileSize >= SECRET_A_SIZE) {
+      uint32_t secretASize = SN_DEBUG ? DEBUG_SECRET_A_SIZE : SECRET_A_SIZE;
+      if (fileSize >= secretASize) {
         LOG(INFO) << "Api client receive secret over, logMsg: " << logMsgFmt << ", fileSize: " << fileSize;
         // 进行crc32校验
-        std::vector<char> bufferVec(SECRET_A_SIZE);
+        std::vector<char> bufferVec(secretASize);
         std::ifstream ifs(waitingSavePath.ToString(), std::ios::in | std::ios::binary);
         ifs.read(bufferVec.data(), bufferVec.size());
         ifs.close();
@@ -168,14 +169,14 @@ void clientRun() {
                     << ", secretSavePath: " << secretSavePath.ToString();
         }
         LOG_IF(ERROR, !waitingSavePath.Remove()) << "Api client secret remove failed, logMsg: " << logMsgFmt
-                                                   << ", waitingSavePath: " << waitingSavePath.ToString();
+                                                 << ", waitingSavePath: " << waitingSavePath.ToString();
         crc32SS.str("");
         break;
       }
       // 当前秘钥未接收完毕
     }
     // 处理完一个秘钥文件
-    sleep(86400);
+    sleep(60);
   }
 }
 }  // namespace shannonnet

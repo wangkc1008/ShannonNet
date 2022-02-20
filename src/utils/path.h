@@ -100,6 +100,8 @@ class Path {
 
   std::string Basename();
 
+  std::string FileName();
+
   static bool RealPath(const std::string &path, std::string &realpath_str);  // NOLINT
 
   friend std::ostream &operator<<(std::ostream &os, const Path &s);

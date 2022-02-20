@@ -284,6 +284,21 @@ std::string Path::Basename() {
   }
 }
 
+std::string Path::FileName() {
+  std::size_t found = path_.find_last_of(separator_);
+  if (found != std::string::npos) {
+    std::string basename = path_.substr(found + 1);
+    std::size_t found = basename.find_last_of('.');
+    if (found != std::string::npos) {
+      return basename.substr(0, found);
+    } else {
+      return basename;
+    }
+  } else {
+    return path_;
+  }
+}
+
 std::shared_ptr<Path::DirIterator> Path::DirIterator::OpenDirectory(Path *f) {
   auto it = new (std::nothrow) DirIterator(f);
 

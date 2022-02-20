@@ -63,9 +63,10 @@ void run() {
     LOG(INFO) << "Init create directories success, path: " << waitingSavePath.ToString();
   }
 
+  uint32_t secretASize = SN_DEBUG ? shannonnet::DEBUG_SECRET_A_SIZE : shannonnet::SECRET_A_SIZE;
   for (size_t i = 0; i < secretPathVec.size(); ++i) {
     for (size_t j = 0; j < secretPathVec[0].size(); j += 2) {
-      std::vector<char> bufferVec(shannonnet::SECRET_A_SIZE);
+      std::vector<char> bufferVec(secretASize);
       std::ifstream ifs(secretPathVec[j][i], std::ios::in | std::ios::binary);
       ifs.read(bufferVec.data(), bufferVec.size());
       ifs.close();
@@ -89,7 +90,7 @@ void run() {
   redis.del(serverIndexTime);
   LOG(INFO) << "Init del key success, key: " << serverIndexTime;
   for (auto &secretFile : initSecrets) {
-    LOG_IF(FATAL, !redis.zadd(serverIndexTime, secretFile, timeStamp));
+    LOG_IF(FATAL, !redis.zadd(serverIndexTime, secretFile.substr(0, secretFile.find_last_of(".")), timeStamp));
     LOG(INFO) << "Init zadd key success, key: " << serverIndexTime << ", member: " << secretFile
               << ", score: " << timeStamp;
   }
@@ -99,7 +100,7 @@ void run() {
   redis.del(clientIndexTime);
   LOG(INFO) << "Init del key success, key: " << clientIndexTime;
   for (auto &secretFile : initSecrets) {
-    LOG_IF(FATAL, !redis.zadd(clientIndexTime, secretFile, timeStamp));
+    LOG_IF(FATAL, !redis.zadd(clientIndexTime, secretFile.substr(0, secretFile.find_last_of(".")), timeStamp));
   }
   LOG(INFO) << "Init zadd key success, key: " << clientIndexTime;
 
@@ -112,8 +113,9 @@ void run() {
     redis.del(keyIndexValidFmt.str());
     LOG(INFO) << "Init del key success, key: " << keyIndexValidFmt.str();
 
-    for (auto &secret : initSecrets) {
-      redis.zadd(keyIndexValidFmt.str(), secret, shannonnet::NODE_SECRET_VALID);
+    for (auto &secretFile : initSecrets) {
+      redis.zadd(keyIndexValidFmt.str(), secretFile.substr(0, secretFile.find_last_of(".")),
+                 shannonnet::NODE_SECRET_VALID);
     }
     LOG(INFO) << "Init zadd key success, key: " << keyIndexValidFmt.str();
   }

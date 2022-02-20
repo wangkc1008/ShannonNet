@@ -47,28 +47,26 @@ class LWE {
 
   using MatrixXT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
-  LWE(const std::string &secretFile = "") : m_secretFile(secretFile) {}
+  LWE() {}
 
-  std::vector<std::string> encrypt(const std::string &inMessage);
-  std::string decrypt(const std::string &in_s, const std::string &in_b);
+  std::vector<T> generateSecretA(const std::string &secretFile);
+  std::vector<std::string> encrypt(const std::string &inMessage, const std::vector<T> &vec_A);
+  std::string decrypt(const std::vector<T> &vec_A, const std::string &in_s, const std::string &in_b);
 
   // temporary function
   // generate waited secret
   void generateSecretFile(const std::string &waiting_secret_path, bool test = false) {
-    generateSecret(SECRET_A_SIZE / sizeof(S_Type), 1, false, waiting_secret_path);
+    uint32_t secretASize = SN_DEBUG ? DEBUG_SECRET_A_SIZE : SECRET_A_SIZE;
+    generateSecret(secretASize / sizeof(S_Type), 1, false, waiting_secret_path);
   }
 
  private:
-  std::vector<T> generateSecret(const uint64_t m, const uint64_t n, bool half = false, const std::string &outFile = "");
-  std::vector<T> generateSecretA(const std::string &file);
+  std::vector<T> generateSecret(const uint32_t m, const uint32_t n, bool half = false, const std::string &outFile = "");
   std::vector<T> message2bin(const std::string &message);
-
- private:
-  std::string m_secretFile;
 };
 
 template <typename T>
-std::vector<T> LWE<T>::generateSecret(const uint64_t m, const uint64_t n, bool half, const std::string &outFile) {
+std::vector<T> LWE<T>::generateSecret(const uint32_t m, const uint32_t n, bool half, const std::string &outFile) {
   std::vector<T> out;
   out.reserve(m * n);
   std::function<T(T)> func;
@@ -103,13 +101,13 @@ std::vector<T> LWE<T>::generateSecret(const uint64_t m, const uint64_t n, bool h
 }
 
 template <typename T>
-std::vector<T> LWE<T>::generateSecretA(const std::string &file) {
-  LOG_ASSERT(!file.empty());
+std::vector<T> LWE<T>::generateSecretA(const std::string &secretFile) {
+  LOG_ASSERT(!secretFile.empty());
   std::vector<T> out;
   out.reserve(M * N);
-  std::ifstream ifs(file, std::ios::in | std::ios::binary);
+  std::ifstream ifs(secretFile, std::ios::in | std::ios::binary);
   if (!ifs.is_open()) {
-    LOG(ERROR) << "File open failed: " << file << ".";
+    LOG(ERROR) << "File open failed: " << secretFile << ".";
     return {};
   }
   ifs.read((char *)out.data(), M * N * sizeof(T));
@@ -131,11 +129,10 @@ std::vector<T> LWE<T>::message2bin(const std::string &message) {
 }
 
 template <typename T>
-std::vector<std::string> LWE<T>::encrypt(const std::string &inMessage) {
+std::vector<std::string> LWE<T>::encrypt(const std::string &inMessage, const std::vector<T> &vec_A) {
   LOG_ASSERT(inMessage.size() != 0);
 
-  std::vector<T> vec_A = generateSecretA(m_secretFile);
-  Eigen::Map<MatrixXT> A(vec_A.data(), M, N);
+  Eigen::Map<MatrixXT> A(const_cast<T *>(vec_A.data()), M, N);
 
   std::vector<T> vec_s = generateSecret(N, 1);
   Eigen::Map<MatrixXT> s(vec_s.data(), N, 1);
@@ -154,10 +151,9 @@ std::vector<std::string> LWE<T>::encrypt(const std::string &inMessage) {
 }
 
 template <typename T>
-std::string LWE<T>::decrypt(const std::string &in_s, const std::string &in_b) {
+std::string LWE<T>::decrypt(const std::vector<T> &vec_A, const std::string &in_s, const std::string &in_b) {
   // 私钥
-  std::vector<T> vec_A = generateSecretA(m_secretFile);
-  Eigen::Map<MatrixXT> A(vec_A.data(), M, N);
+  Eigen::Map<MatrixXT> A(const_cast<T *>(vec_A.data()), M, N);
 
   // 公钥
   Eigen::Map<MatrixXT> s((T *)in_s.data(), N, 1);
@@ -175,9 +171,10 @@ std::string LWE<T>::decrypt(const std::string &in_s, const std::string &in_b) {
   std::vector<T> vec_res(b_.data(), b_.data() + b_.size());
   std::string cur_str;
   std::string out_message;
+  uint16_t halfQ = Q / 2;
   for (auto &item : vec_res) {
     uint bit = 1;
-    if (item < uint(Q / 2)) {
+    if (item < halfQ) {
       bit = 0;
     }
 

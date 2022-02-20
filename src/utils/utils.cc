@@ -67,15 +67,16 @@ std::vector<std::pair<std::string, uint32_t>> readFileSize(const std::string &di
         continue;
       }
 
-      uint16_t isValid = redis.zscore(redisKeyFmt, secretFilePath.Basename()).value();
+      uint16_t isValid = redis.zscore(redisKeyFmt, secretFilePath.FileName()).value();
       if (isValid != shannonnet::NODE_SECRET_VALID) {
-        LOG(WARNING) << "readFileSize secret is invalid, secret: " + secretFilePath.ToString();
+        LOG(WARNING) << "readFileSize secret is invalid, secret: " + secretFilePath.ToString() +
+                          ", key: " + secretFilePath.FileName() + ", isValid: " + std::to_string(isValid);
         continue;
       }
 
       std::ifstream ifs(secretFilePath.ToString(), std::ios::in | std::ios::binary);
       ifs.seekg(0, std::ios::end);
-      uint64_t size = ifs.tellg();
+      uint32_t size = ifs.tellg();
       pathAndSizeVec.emplace_back(std::make_pair(secretFilePath.ToString(), size));
     } catch (const std::exception &err) {
       LOG(ERROR) << "Invalid path, failed to read secret file: " << dirPath.ToString();

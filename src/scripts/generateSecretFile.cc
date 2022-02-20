@@ -47,17 +47,17 @@ auto generateRandomFile(std::vector<std::pair<std::string, uint>> pathAndSizeVec
  * @param fileNum
  * @return std::vector<std::vector<uint>>
  */
-std::vector<std::vector<uint>> generateRandom(uint32_t fileNum) {
+std::vector<std::vector<uint>> generateRandom(uint32_t fileNum, const std::string &source) {
   std::vector<std::vector<uint>> vec;
-  vec.reserve(fileNum * THREAD_NUM);
-  auto num = SECRET_FILE_SIZE / (READ_NUM / 8) / THREAD_NUM;
+  uint32_t num = SECRET_FILE_SIZE / (READ_NUM / 8) / THREAD_NUM;
+  uint32_t secretASize = SN_DEBUG ? shannonnet::DEBUG_SECRET_A_SIZE : shannonnet::SECRET_A_SIZE;
   for (size_t i = 0; i < fileNum * THREAD_NUM; ++i) {
     std::vector<uint> subVec;
     subVec.reserve(num);
     for (size_t j = 0; j < num; ++j) {
-      auto random = rand() % SECRET_A_SIZE;
-      if ((random + READ_LEN) > SECRET_A_SIZE) {
-        random = SECRET_A_SIZE - READ_LEN;
+      auto random = rand() % secretASize;
+      if ((random + READ_LEN) > secretASize) {
+        random = secretASize - READ_LEN;
       }
       subVec.emplace_back(std::move(random));
     }
@@ -94,7 +94,8 @@ void processTmpSecret(const std::string &path, uint fileIdx, uint threadIdx, con
     return;
   }
   // 将秘钥文件等分给每个线程处理
-  uint bufferSize = THREAD_NUM > 1 ? (SECRET_A_SIZE / THREAD_NUM) : SECRET_A_SIZE;
+  uint32_t secretASize = SN_DEBUG ? DEBUG_SECRET_A_SIZE : SECRET_A_SIZE;
+  uint32_t bufferSize = THREAD_NUM > 1 ? (secretASize / (uint32_t)THREAD_NUM) : secretASize;
   std::vector<char> bufVec(bufferSize);
   ifs.seekg(bufferSize * threadIdx, std::ios::beg);
   ifs.read(bufVec.data(), static_cast<std::streamsize>(bufVec.size()));
@@ -104,15 +105,17 @@ void processTmpSecret(const std::string &path, uint fileIdx, uint threadIdx, con
   // 生成与所需秘钥大小相同的tmp秘钥
   uint16_t num = 0;
   std::stringstream ss;
+  uint32_t readChars = READ_LEN / BIT;
+  uint32_t availRead = bufferSize - readChars;
   for (auto &random : vec) {
     num = 0;
     std::stringstream charSS;
     for (size_t i = 0; i < READ_NUM; ++i) {
-      uint32_t offset = (random * i) % bufferSize;
-      std::string str{bufVec.data() + offset, READ_LEN / 8};
-      std::bitset<8> bitFirst8(0);
+      uint32_t offset = (random * i) % availRead;
+      std::string str{bufVec.data() + offset, readChars};
+      std::bitset<BIT> bitFirst8(0);
       for (auto &c : str) {
-        bitFirst8 ^= std::bitset<8>(c);
+        bitFirst8 ^= std::bitset<BIT>(c);
       }
       std::string bitStr = bitFirst8.to_string();
       std::bitset<1> bitFirst1(0);
@@ -120,8 +123,8 @@ void processTmpSecret(const std::string &path, uint fileIdx, uint threadIdx, con
         bitFirst1 ^= std::bitset<1>(cc);
       }
       charSS << bitFirst1.to_string();
-      if (++num % 8 == 0) {
-        std::bitset<8> bits(charSS.str());
+      if (++num % BIT == 0) {
+        std::bitset<BIT> bits(charSS.str());
         ss << (char)bits.to_ulong();
         charSS.str("");
       }
@@ -148,8 +151,9 @@ void processTmpSecret(const std::string &path, uint fileIdx, uint threadIdx, con
   ofs << ss.str();
   ofs.flush();
   ofs.close();
+  auto crc32Val = crc32c::Crc32c(ss.str());
   LOG(INFO) << "Execute processTmpSecret successfully, msg: " + logMsgFmt +
-                 ", writeSize: " + std::to_string(ss.str().size());
+                 ", writeSize: " + std::to_string(ss.str().size()) + ", crc32Val: " + std::to_string(crc32Val);
 }
 
 /**
@@ -222,8 +226,9 @@ void processBinSecret(uint threadIdx, uint fileNum, const std::string &saveIdx, 
   ofs << ss.str();
   ofs.flush();
   ofs.close();
+  auto crc32Val = crc32c::Crc32c(ss.str());
   LOG(INFO) << "Execute processBinSecret successfully, msg: " + logMsgFmt +
-                 ", writeSize: " + std::to_string(ss.str().size());
+                 ", writeSize: " + std::to_string(ss.str().size()) + ", crc32Val: " + std::to_string(crc32Val);
 }
 
 /**
@@ -325,6 +330,10 @@ void generateSecretFileScript() {
 
       // 读取secrets下node_serverNodeId_cientNodeId目录中所有可用的文件路径和大小
       auto pathAndSizeVec = shannonnet::readFileSize(secretSavePath.ToString(), serverNodeId, clientNodeId);
+      if (pathAndSizeVec.empty()) {
+        LOG(WARNING) << "No valid secret files in dir, dir: " + secretSavePath.ToString();
+        continue;
+      }
       // 秘钥文件数量超过设定的数量时随机抽取部分文件
       if (pathAndSizeVec.size() > FILE_NUM) {
         pathAndSizeVec = generateRandomFile(pathAndSizeVec);
@@ -332,7 +341,7 @@ void generateSecretFileScript() {
 
       // 设定随机数
       uint pathAndSizeVecSize = pathAndSizeVec.size();
-      auto randomVec = generateRandom(pathAndSizeVecSize);
+      auto randomVec = generateRandom(pathAndSizeVecSize, source);
       // 为每个秘钥文件生成固定数量tmp秘钥文件
       std::vector<std::thread> threads;
       for (size_t fileIdx = 0; fileIdx < pathAndSizeVecSize; ++fileIdx) {

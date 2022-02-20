@@ -197,22 +197,26 @@ class SecretController : public oatpp::web::server::api::ApiController {
     std::vector<char> bufferVec(S_LEN * EACH_NUM);
     ifs.read(bufferVec.data(), S_LEN * EACH_NUM);
 
-    // 加密  累计 EACH_NUM 次
-    shannonnet::LWE<S_Type>::ptr lwe(new shannonnet::LWE<S_Type>(runningSavePath.ToString()));
-    for (uint16_t i = 0; i < EACH_NUM; ++i) {
-      auto vec = lwe->encrypt({bufferVec.data() + i * S_LEN, S_LEN});
-      auto secret = SecretDto::createShared();
-      secret->secretS = vec[0];
-      secret->secretB = vec[1];
-      secret->progress = progress++;
-      msg->data->emplace_back(std::move(secret));
-      LOG_IF(ERROR, !redis.zincrby(shannonnet::KEY_SECRET_INDEX_COUNT_ZSET, 1, index))
-        << "Api getData incrby error, args: " << argsMsg;
+    {
+      // 加密  累计 EACH_NUM 次
+      shannonnet::LWE<S_Type>::ptr lwe(new shannonnet::LWE<S_Type>());
+      std::vector<S_Type> secretA = lwe->generateSecretA(runningSavePath.ToString());
+      for (uint16_t i = 0; i < EACH_NUM; ++i) {
+        auto vec = lwe->encrypt({bufferVec.data() + i * S_LEN, S_LEN}, secretA);
+        auto secret = SecretDto::createShared();
+        secret->secretS = vec[0];
+        secret->secretB = vec[1];
+        secret->progress = progress++;
+        msg->data->emplace_back(std::move(secret));
+        LOG_IF(ERROR, !redis.zincrby(shannonnet::KEY_SECRET_INDEX_COUNT_ZSET, 1, index))
+          << "Api getData incrby error, args: " << argsMsg;
+      }
     }
 
     // 根据redis中的进度记录判断当前秘钥文件是否传输完毕
     redisProgress = redis.zscore(shannonnet::KEY_SECRET_INDEX_COUNT_ZSET, index).value();
-    if (redisProgress >= (SECRET_A_SIZE / S_LEN)) {
+    uint32_t secretASize = SN_DEBUG ? DEBUG_SECRET_A_SIZE : SECRET_A_SIZE;
+    if (redisProgress >= (secretASize / S_LEN)) {
       auto redisKeyFmt =
         (boost::format(shannonnet::KEY_NODE_INDEX_VALID_ZSET) % shannonnet::SERVER_NODE % nodeId).str();
       // 当前秘钥是否已添加到节点下的通信秘钥zset中
@@ -229,10 +233,6 @@ class SecretController : public oatpp::web::server::api::ApiController {
       }
 
       // 将原秘钥从waiting move到 secrets
-      ifs.seekg(0, std::ios::beg);
-      std::vector<char> moveBufferVec(SECRET_A_SIZE);
-      ifs.read(moveBufferVec.data(), moveBufferVec.size());
-
       auto nodeFmt = (boost::format("node_%d_%d") % shannonnet::SERVER_NODE % nodeId).str();
       auto secretSavePathFmt = (boost::format(SECRET_SAVE_PATH) % SERVER_NAME).str();
       Path secretSavePath(secretSavePathFmt);
@@ -246,11 +246,16 @@ class SecretController : public oatpp::web::server::api::ApiController {
                    << ", secretSavePath: " << secretSavePath.ToString() << ", json: " << jsonMapperData->c_str();
         return createDtoResponse(Status::CODE_500, msg);
       }
+      {
+        std::vector<char> moveBufferVec(secretASize);
+        ifs.seekg(0, std::ios::beg);
+        ifs.read(moveBufferVec.data(), moveBufferVec.size());
 
-      std::ofstream ofs(secretSavePath.ToString(), std::ios::out | std::ios::binary | std::ios::ate);
-      ofs.write(moveBufferVec.data(), moveBufferVec.size());
-      ofs.flush();
-      ofs.close();
+        std::ofstream ofs(secretSavePath.ToString(), std::ios::out | std::ios::binary | std::ios::ate);
+        ofs.write(moveBufferVec.data(), moveBufferVec.size());
+        ofs.flush();
+        ofs.close();
+      }
       // 设置当前秘钥为invalid状态
       LOG_IF(ERROR, !redis.zadd(redisKeyFmt, index, shannonnet::NODE_SECRET_INVALID))
         << "Api getData zadd error, args: " << argsMsg << ", key: " << redisKeyFmt;
@@ -275,7 +280,7 @@ class SecretController : public oatpp::web::server::api::ApiController {
    *
    */
   ENDPOINT("GET", "/result_report/{nodeIdArg}/{indexArg}/{isValidArg}", resultReport, PATH(UInt16, nodeIdArg),
-           PATH(String, indexArg), PATH(UInt8, isValidArg)) {
+           PATH(String, indexArg), PATH(UInt16, isValidArg)) {
     LOG(INFO) << "Api resultReport is running, nodeId: " << nodeIdArg << ", index: " << indexArg.getValue("")
               << ", isValid: " << isValidArg;
     uint16_t nodeId = nodeIdArg.getValue(0);
@@ -317,8 +322,7 @@ class SecretController : public oatpp::web::server::api::ApiController {
     }
 
     // 设置秘钥invalid 同时删除秘钥文件
-    LOG_IF(ERROR, !redis.zadd(redisKeyFmt, index, shannonnet::NODE_SECRET_INVALID))
-      << "Api resultReport set secret invalid error, args: " << argsMsg;
+    redis.zadd(redisKeyFmt, index, shannonnet::NODE_SECRET_INVALID);
 
     auto secretSavePathFmt = (boost::format(SECRET_SAVE_PATH) % SERVER_NAME).str();
     auto nodeFmt = (boost::format("node_%d_%d") % shannonnet::SERVER_NODE % nodeId).str();
