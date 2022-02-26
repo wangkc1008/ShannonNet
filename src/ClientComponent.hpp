@@ -24,4 +24,5 @@ class ClientComponent {
   ([] { return oatpp::parser::json::mapping::ObjectMapper::createShared(); }());
 };
 }  // namespace shannonnet
+
 #endif  // __SHANNON_NET_CLIENT_COMPONENT_HPP__

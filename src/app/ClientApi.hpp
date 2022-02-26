@@ -4,15 +4,17 @@
 #include <oatpp/core/macro/codegen.hpp>
 #include <oatpp/web/client/ApiClient.hpp>
 
+#include "src/dto/DTOs.hpp"
+
 namespace shannonnet {
 #include OATPP_CODEGEN_BEGIN(ApiClient)
 class ClientApi : public oatpp::web::client::ApiClient {
   API_CLIENT_INIT(ClientApi);
-  API_CALL("GET", "/shannonnet/gen_secret/{nodeIdArg}/", genSecret, PATH(UInt16, nodeIdArg));
-  API_CALL("GET", "/shannonnet/get_data/{nodeIdArg}/{indexArg}/{progressArg}/", getData, PATH(UInt16, nodeIdArg),
-           PATH(String, indexArg), PATH(UInt32, progressArg));
-  API_CALL("GET", "/shannonnet/result_report/{nodeIdArg}/{indexArg}/{isValidArg}/", resultReport, PATH(UInt16, nodeIdArg),
-           PATH(String, indexArg), PATH(UInt16, isValidArg));
+  API_CALL("POST", "/shannonnet/gen_secret/", genSecret, BODY_DTO(Object<GenSecretPostDto>, body));
+  API_CALL("POST", "/shannonnet/get_data/", getData,
+           BODY_DTO(Object<GetDataPostDto>, body));
+  API_CALL("POST", "/shannonnet/result_report/", resultReport,
+           BODY_DTO(Object<ResultReportPostDto>, body));
 };
 #include OATPP_CODEGEN_END(ApiClient)
 }  // namespace shannonnet

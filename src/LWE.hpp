@@ -48,6 +48,7 @@ class LWE {
   using MatrixXT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
   LWE() {}
+  ~LWE() {}
 
   std::vector<T> generateSecretA(const std::string &secretFile);
   std::vector<std::string> encrypt(const std::string &inMessage, const std::vector<T> &vec_A);
@@ -103,14 +104,14 @@ std::vector<T> LWE<T>::generateSecret(const uint32_t m, const uint32_t n, bool h
 template <typename T>
 std::vector<T> LWE<T>::generateSecretA(const std::string &secretFile) {
   LOG_ASSERT(!secretFile.empty());
-  std::vector<T> out;
-  out.reserve(M * N);
+  std::vector<T> out(M * N);
   std::ifstream ifs(secretFile, std::ios::in | std::ios::binary);
   if (!ifs.is_open()) {
     LOG(ERROR) << "File open failed: " << secretFile << ".";
     return {};
   }
   ifs.read((char *)out.data(), M * N * sizeof(T));
+  ifs.close();
   return out;
 }
 

@@ -85,27 +85,19 @@ void run() {
   redis.del(shannonnet::KEY_GENERATE_SECRET_LIST);
   LOG(INFO) << "Init del key success, key: " << shannonnet::KEY_GENERATE_SECRET_LIST;
 
-  boost::format serverIndexTimeFmt(shannonnet::KEY_SECRET_INDEX_TIME_ZSET);
-  auto serverIndexTime = (serverIndexTimeFmt % "haha").str();
-  redis.del(serverIndexTime);
-  LOG(INFO) << "Init del key success, key: " << serverIndexTime;
-  for (auto &secretFile : initSecrets) {
-    LOG_IF(FATAL, !redis.zadd(serverIndexTime, secretFile.substr(0, secretFile.find_last_of(".")), timeStamp));
-    LOG(INFO) << "Init zadd key success, key: " << serverIndexTime << ", member: " << secretFile
-              << ", score: " << timeStamp;
+  for (auto &name : initName) {
+    auto keyIndexTime = (boost::format(shannonnet::KEY_SECRET_INDEX_TIME_ZSET) % name).str();
+    redis.del(keyIndexTime);
+    LOG(INFO) << "Init del key success, key: " << keyIndexTime;
+    for (auto &secretFile : initSecrets) {
+      LOG_IF(FATAL, !redis.zadd(keyIndexTime, secretFile.substr(0, secretFile.find_last_of(".")), timeStamp));
+      LOG(INFO) << "Init zadd key success, key: " << keyIndexTime << ", member: " << secretFile
+                << ", score: " << timeStamp;
+    }
+    auto keyIndexCount = (boost::format(shannonnet::KEY_SECRET_INDEX_COUNT_ZSET) % name).str();
+    redis.del(keyIndexCount);
+    LOG(INFO) << "Init del key success, key: " << keyIndexCount;
   }
-
-  boost::format cientIndexTimeFmt(shannonnet::KEY_SECRET_INDEX_TIME_ZSET);
-  auto clientIndexTime = (cientIndexTimeFmt % shannonnet::CLIENT_NAME).str();
-  redis.del(clientIndexTime);
-  LOG(INFO) << "Init del key success, key: " << clientIndexTime;
-  for (auto &secretFile : initSecrets) {
-    LOG_IF(FATAL, !redis.zadd(clientIndexTime, secretFile.substr(0, secretFile.find_last_of(".")), timeStamp));
-  }
-  LOG(INFO) << "Init zadd key success, key: " << clientIndexTime;
-
-  redis.del(shannonnet::KEY_SECRET_INDEX_COUNT_ZSET);
-  LOG(INFO) << "Init del key success, key: " << shannonnet::KEY_SECRET_INDEX_COUNT_ZSET;
 
   for (auto &item : nodeIdMap) {
     boost::format keyIndexValidFmt(shannonnet::KEY_NODE_INDEX_VALID_ZSET);
@@ -115,7 +107,7 @@ void run() {
 
     for (auto &secretFile : initSecrets) {
       redis.zadd(keyIndexValidFmt.str(), secretFile.substr(0, secretFile.find_last_of(".")),
-                 shannonnet::NODE_SECRET_VALID);
+                 static_cast<uint16_t>(shannonnet::SECRET_STATUS::NODE_SECRET_VALID));
     }
     LOG(INFO) << "Init zadd key success, key: " << keyIndexValidFmt.str();
   }

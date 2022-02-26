@@ -1,5 +1,7 @@
 #ifndef __SHANNON_NET_SERVER_CONTROLLER_HPP__
 #define __SHANNON_NET_SERVER_CONTROLLER_HPP__
+#include <future>
+#include <thread>
 
 #include "boost/format.hpp"
 #include "crc32c/crc32c.h"
@@ -14,19 +16,41 @@
 
 namespace shannonnet {
 #include OATPP_CODEGEN_BEGIN(ApiController)
+std::vector<SecretDto::Wrapper> encryptSecrets(const shannonnet::LWE<S_Type>::ptr &lwePtr, const char *data,
+                                               uint32_t progress, uint32_t offset, const std::vector<S_Type> &secretA,
+                                               const uint32_t runningThreadId) {
+  uint32_t currentNum =
+    (runningThreadId != RUNNING_THREAD_NUM - 1) ? (offset + EACH_NUM / RUNNING_THREAD_NUM) : EACH_NUM;
+  std::vector<SecretDto::Wrapper> vecSecretDto;
+  vecSecretDto.reserve(currentNum - offset);
+  for (size_t i = offset; i < currentNum; ++i) {
+    auto vec = lwePtr->encrypt({data + i * S_LEN, S_LEN}, secretA);
+    auto secret = SecretDto::createShared();
+    secret->secretS = vec[0];
+    secret->secretB = vec[1];
+    secret->progress = progress++;
+    vecSecretDto.emplace_back(std::move(secret));
+  }
+  return vecSecretDto;
+}
+
 class SecretController : public oatpp::web::server::api::ApiController {
  public:
   SecretController(OATPP_COMPONENT(std::shared_ptr<ObjectMapper>, objectMapper))
       : oatpp::web::server::api::ApiController(objectMapper) {}
+
+ private:
+  uint32_t secretASize_ = SN_DEBUG ? DEBUG_SECRET_A_SIZE : SECRET_A_SIZE;
+
   /**
    * @brief
    *    传输秘钥前client需要调用改接口生成传输过程所需秘钥
    *
    */
-  ENDPOINT("GET", "/gen_secret/{nodeIdArg}/", genSecret, PATH(UInt16, nodeIdArg)) {
-    LOG(INFO) << "Api genSecret is running, nodeIdArg: " << nodeIdArg;
+  ENDPOINT("POST", "/gen_secret/", genSecret, BODY_DTO(Object<GenSecretPostDto>, body)) {
+    LOG(INFO) << "Api genSecret is running, nodeIdArg: " << body->nodeIdArg;
 
-    uint16_t nodeId = nodeIdArg.getValue(0);
+    uint16_t nodeId = body->nodeIdArg.getValue(0);
     LOG_ASSERT(nodeId > 0);
 
     auto msg = MessageGenSecretDto::createShared();
@@ -97,16 +121,16 @@ class SecretController : public oatpp::web::server::api::ApiController {
    *    传输秘钥接口
    *
    */
-  ENDPOINT("GET", "/get_data/{nodeIdArg}/{indexArg}/{progressArg}", getData, PATH(UInt16, nodeIdArg),
-           PATH(String, indexArg), PATH(UInt32, progressArg)) {
+  ENDPOINT("POST", "/get_data/", getData, BODY_DTO(Object<GetDataPostDto>, body)) {
     // 验证nodeId的合法性 todo
-    LOG(INFO) << "Api getData is running, nodeId: " << nodeIdArg << ", index: " << indexArg.getValue("")
-              << ", progress: " << progressArg;
-    uint16_t nodeId = nodeIdArg.getValue(0);
+    LOG(INFO) << "Api getData is running, nodeId: " << body->nodeIdArg << ", index: " << body->indexArg.getValue("")
+              << ", progress: " << body->progressArg;
+    auto startTime = std::chrono::system_clock::now();
+    uint16_t nodeId = body->nodeIdArg.getValue(0);
     LOG_ASSERT(nodeId > 0);
-    std::string index = indexArg.getValue("");
+    std::string index = body->indexArg.getValue("");
     LOG_ASSERT(!index.empty());
-    uint32_t progress = progressArg.getValue(0);
+    uint32_t progress = body->progressArg.getValue(0);
     LOG_ASSERT(progress >= 0);
 
     std::string argsMsg =
@@ -174,10 +198,10 @@ class SecretController : public oatpp::web::server::api::ApiController {
     }
 
     // 判断当前请求的进度是否等于redis中的进度记录 或 是否大于秘钥文件大小
-    ifs.seekg(0, std::ios::end);
-    uint32_t fileSize = ifs.tellg();
-    uint32_t redisProgress = redis.zscore(shannonnet::KEY_SECRET_INDEX_COUNT_ZSET, index).value();
-    if (progress != redisProgress || progress >= fileSize) {
+    uint32_t redisProgress = 0;
+    auto serverIndexCount = (boost::format(shannonnet::KEY_SECRET_INDEX_COUNT_ZSET) % SERVER_NAME).str();
+    if (progress >= PROGRESS) {
+      redisProgress = redis.zscore(serverIndexCount, index).value();
       auto secret = SecretDto::createShared();
       secret->secretB = "";
       secret->secretS = "";
@@ -188,35 +212,35 @@ class SecretController : public oatpp::web::server::api::ApiController {
       msg->data->emplace_back(std::move(secret));
       auto jsonMapperData = jsonObjectMapper->writeToString(msg);
       LOG(ERROR) << "Api getData " << msg->description.getValue("") << ", args: " << argsMsg
-                 << ", redisProgress: " << redisProgress << ", fileSize: " << fileSize
-                 << ", json: " << jsonMapperData->c_str();
+                 << ", redisProgress: " << redisProgress << ", json: " << jsonMapperData->c_str();
       return createDtoResponse(Status::CODE_201, msg);
     }
     // 读取指定进度位置的秘钥内容
-    ifs.seekg(progress * S_LEN, std::ios::beg);
+    ifs.seekg(progress * S_LEN * EACH_NUM, std::ios::beg);
     std::vector<char> bufferVec(S_LEN * EACH_NUM);
     ifs.read(bufferVec.data(), S_LEN * EACH_NUM);
 
-    {
-      // 加密  累计 EACH_NUM 次
-      shannonnet::LWE<S_Type>::ptr lwe(new shannonnet::LWE<S_Type>());
-      std::vector<S_Type> secretA = lwe->generateSecretA(runningSavePath.ToString());
-      for (uint16_t i = 0; i < EACH_NUM; ++i) {
-        auto vec = lwe->encrypt({bufferVec.data() + i * S_LEN, S_LEN}, secretA);
-        auto secret = SecretDto::createShared();
-        secret->secretS = vec[0];
-        secret->secretB = vec[1];
-        secret->progress = progress++;
-        msg->data->emplace_back(std::move(secret));
-        LOG_IF(ERROR, !redis.zincrby(shannonnet::KEY_SECRET_INDEX_COUNT_ZSET, 1, index))
-          << "Api getData incrby error, args: " << argsMsg;
+    // 加密  累计 EACH_NUM 次
+    shannonnet::LWE<S_Type>::ptr lwe(new shannonnet::LWE<S_Type>());
+    std::vector<S_Type> secretA = lwe->generateSecretA(runningSavePath.ToString());
+    std::vector<std::future<std::vector<SecretDto::Wrapper>>> vec;
+    for (size_t runningThreadId = 0; runningThreadId < RUNNING_THREAD_NUM; ++runningThreadId) {
+      uint32_t offset = EACH_NUM / RUNNING_THREAD_NUM * runningThreadId;
+      vec.emplace_back(std::async(std::launch::async, shannonnet::encryptSecrets, lwe, bufferVec.data(),
+                                  progress * EACH_NUM + offset, offset, secretA, runningThreadId));
+    }
+
+    for (auto &futureItem : vec) {
+      auto res = futureItem.get();  // 堵塞 直到就绪
+      for (auto &item : res) {
+        msg->data->emplace_back(std::move(item));
       }
     }
 
     // 根据redis中的进度记录判断当前秘钥文件是否传输完毕
-    redisProgress = redis.zscore(shannonnet::KEY_SECRET_INDEX_COUNT_ZSET, index).value();
-    uint32_t secretASize = SN_DEBUG ? DEBUG_SECRET_A_SIZE : SECRET_A_SIZE;
-    if (redisProgress >= (secretASize / S_LEN)) {
+    redisProgress = redis.zincrby(serverIndexCount, 1, index);
+    LOG_IF(ERROR, !redisProgress) << "Api getData incrby error, args: " << argsMsg;
+    if (redisProgress >= PROGRESS) {
       auto redisKeyFmt =
         (boost::format(shannonnet::KEY_NODE_INDEX_VALID_ZSET) % shannonnet::SERVER_NODE % nodeId).str();
       // 当前秘钥是否已添加到节点下的通信秘钥zset中
@@ -247,7 +271,7 @@ class SecretController : public oatpp::web::server::api::ApiController {
         return createDtoResponse(Status::CODE_500, msg);
       }
       {
-        std::vector<char> moveBufferVec(secretASize);
+        std::vector<char> moveBufferVec(secretASize_);
         ifs.seekg(0, std::ios::beg);
         ifs.read(moveBufferVec.data(), moveBufferVec.size());
 
@@ -257,7 +281,7 @@ class SecretController : public oatpp::web::server::api::ApiController {
         ofs.close();
       }
       // 设置当前秘钥为invalid状态
-      LOG_IF(ERROR, !redis.zadd(redisKeyFmt, index, shannonnet::NODE_SECRET_INVALID))
+      LOG_IF(ERROR, !redis.zadd(redisKeyFmt, index, static_cast<uint16_t>(SECRET_STATUS::NODE_SECRET_INVALID)))
         << "Api getData zadd error, args: " << argsMsg << ", key: " << redisKeyFmt;
       // 删除waiting秘钥
       LOG_IF(ERROR, !waitingSavePath.Remove())
@@ -271,6 +295,8 @@ class SecretController : public oatpp::web::server::api::ApiController {
 
     LOG(INFO) << "Api getData success, args: " << argsMsg << " statusCode " << msg->statusCode << " description "
               << msg->description.getValue("") << " size " << msg->data->size() << ".";
+    auto endTime = std::chrono::system_clock::now();
+    LOG(WARNING) << "Time: " << (endTime - startTime).count();
     return createDtoResponse(Status::CODE_200, msg);
   }
 
@@ -279,15 +305,14 @@ class SecretController : public oatpp::web::server::api::ApiController {
    *    秘钥传输完毕的结果上报接口
    *
    */
-  ENDPOINT("GET", "/result_report/{nodeIdArg}/{indexArg}/{isValidArg}", resultReport, PATH(UInt16, nodeIdArg),
-           PATH(String, indexArg), PATH(UInt16, isValidArg)) {
-    LOG(INFO) << "Api resultReport is running, nodeId: " << nodeIdArg << ", index: " << indexArg.getValue("")
-              << ", isValid: " << isValidArg;
-    uint16_t nodeId = nodeIdArg.getValue(0);
+  ENDPOINT("POST", "/result_report/", resultReport, BODY_DTO(Object<ResultReportPostDto>, body)) {
+    LOG(INFO) << "Api resultReport is running, nodeId: " << body->nodeIdArg << ", index: " << body->indexArg.getValue("")
+              << ", isValid: " << body->isValidArg;
+    uint16_t nodeId = body->nodeIdArg.getValue(0);
     LOG_ASSERT(nodeId > 0);
-    std::string index = indexArg.getValue("");
+    std::string index = body->indexArg.getValue("");
     LOG_ASSERT(!index.empty());
-    uint16_t isValid = isValidArg.getValue(shannonnet::NODE_SECRET_INVALID);
+    uint16_t isValid = body->isValidArg.getValue(static_cast<uint16_t>(SECRET_STATUS::NODE_SECRET_INVALID));
 
     std::string argsMsg = (boost::format("nodeId => %d; index => %s; isValid => %d;") % nodeId % index % isValid).str();
 
@@ -310,8 +335,8 @@ class SecretController : public oatpp::web::server::api::ApiController {
 
     // 设置秘钥为valid
     auto redisKeyFmt = (boost::format(shannonnet::KEY_NODE_INDEX_VALID_ZSET) % shannonnet::SERVER_NODE % nodeId).str();
-    if (isValid == shannonnet::NODE_SECRET_VALID) {
-      redis.zadd(redisKeyFmt, index, shannonnet::NODE_SECRET_VALID);
+    if (isValid == static_cast<uint16_t>(SECRET_STATUS::NODE_SECRET_VALID)) {
+      redis.zadd(redisKeyFmt, index, static_cast<uint16_t>(SECRET_STATUS::NODE_SECRET_VALID));
       msg->statusCode = 200;
       msg->description = "valid success";
       msg->data = {};
@@ -322,7 +347,7 @@ class SecretController : public oatpp::web::server::api::ApiController {
     }
 
     // 设置秘钥invalid 同时删除秘钥文件
-    redis.zadd(redisKeyFmt, index, shannonnet::NODE_SECRET_INVALID);
+    redis.zadd(redisKeyFmt, index, static_cast<uint16_t>(SECRET_STATUS::NODE_SECRET_INVALID));
 
     auto secretSavePathFmt = (boost::format(SECRET_SAVE_PATH) % SERVER_NAME).str();
     auto nodeFmt = (boost::format("node_%d_%d") % shannonnet::SERVER_NODE % nodeId).str();
@@ -339,15 +364,15 @@ class SecretController : public oatpp::web::server::api::ApiController {
       return createDtoResponse(Status::CODE_500, msg);
     }
 
-    if (!secretSavePath.Remove()) {
-      msg->statusCode = 500;
-      msg->description = "current secret remove failed";
-      msg->data = {};
-      auto jsonMapperData = jsonObjectMapper->writeToString(msg);
-      LOG(ERROR) << "Api resultReport " << msg->description.getValue("") << ", args: " << argsMsg
-                 << ", secretSavePath: " << secretSavePath.ToString() << ", json: " << jsonMapperData->c_str();
-      return createDtoResponse(Status::CODE_500, msg);
-    }
+    // if (!secretSavePath.Remove()) {
+    //   msg->statusCode = 500;
+    //   msg->description = "current secret remove failed";
+    //   msg->data = {};
+    //   auto jsonMapperData = jsonObjectMapper->writeToString(msg);
+    //   LOG(ERROR) << "Api resultReport " << msg->description.getValue("") << ", args: " << argsMsg
+    //              << ", secretSavePath: " << secretSavePath.ToString() << ", json: " << jsonMapperData->c_str();
+    //   return createDtoResponse(Status::CODE_500, msg);
+    // }
 
     msg->statusCode = 200;
     msg->description = "success";
@@ -358,6 +383,7 @@ class SecretController : public oatpp::web::server::api::ApiController {
     return createDtoResponse(Status::CODE_200, msg);
   }
 };
+
 #include OATPP_CODEGEN_END(ApiController)
 }  // namespace shannonnet
 #endif  // __SHANNON_NET_SERVER_CONTROLLER_HPP__

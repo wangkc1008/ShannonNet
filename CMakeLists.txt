@@ -51,7 +51,7 @@ add_executable(oatpp_server src/ServerApp.cc)
 add_dependencies(oatpp_server ${PROJECT_NAME})
 target_link_libraries(oatpp_server ${PROJECT_NAME})
 
-add_executable(oatpp_client src/ClientApp.cc)
+add_executable(oatpp_client src/ClientApp.cc src/Decrypt.cc)
 add_dependencies(oatpp_client ${PROJECT_NAME})
 target_link_libraries(oatpp_client ${PROJECT_NAME})
 

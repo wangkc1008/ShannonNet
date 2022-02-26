@@ -279,6 +279,7 @@ void generateSecretFileScript() {
       // 当前index对应的秘钥是否生成
       auto keyIndexTimefmt = (boost::format(shannonnet::KEY_SECRET_INDEX_TIME_ZSET) % source).str();
       auto createTime = redis.zscore(keyIndexTimefmt, saveIdx);
+      auto keyIndexCount = (boost::format(shannonnet::KEY_SECRET_INDEX_COUNT_ZSET) % source).str();
       if (createTime) {
         LOG(ERROR) << "Secrets corresponding to current index have been generated, saveIdx: " + saveIdx;
         sleep(5);
@@ -302,7 +303,7 @@ void generateSecretFileScript() {
           continue;
         }
       }
-      LOG(INFO) << "Dir created successfuly, dir: " + runningSavePath.ToString();
+      LOG(INFO) << "Dir created successfully, dir: " + runningSavePath.ToString();
 
       // 创建running/saveIdx/tmp目录
       auto runningTmpPath = runningSavePath / std::string("tmp");
@@ -312,7 +313,7 @@ void generateSecretFileScript() {
           continue;
         }
       }
-      LOG(INFO) << "Dir created successfuly, dir: " + runningTmpPath.ToString();
+      LOG(INFO) << "Dir created successfully, dir: " + runningTmpPath.ToString();
 
       // 创建waiting/saveIdx目录
       Path waitingSavePath((boost::format(WAITING_SAVE_PATH) % source).str());
@@ -323,7 +324,7 @@ void generateSecretFileScript() {
           continue;
         }
       }
-      LOG(INFO) << "Dir created successfuly, dir: " + waitingSavePath.ToString();
+      LOG(INFO) << "Dir created successfully, dir: " + waitingSavePath.ToString();
 
       // 将json中的随机数设为随机种子
       srand(randomNum);
@@ -353,7 +354,7 @@ void generateSecretFileScript() {
       for (auto &thread : threads) {
         thread.join();
       }
-      LOG(INFO) << "Execute processTmpSecret successfuly, saveIdx: " + saveIdx;
+      LOG(INFO) << "Execute processTmpSecret successfully, saveIdx: " + saveIdx;
 
       // 根据线程id将n个秘钥文件生成的n个tmp秘钥 异或 合并为1个秘钥文件
       std::vector<std::thread> threadsMerge;
@@ -363,7 +364,7 @@ void generateSecretFileScript() {
       for (auto &threadMerge : threadsMerge) {
         threadMerge.join();
       }
-      LOG(INFO) << "Execute processBinSecret successfuly, saveIdx: " + saveIdx;
+      LOG(INFO) << "Execute processBinSecret successfully, saveIdx: " + saveIdx;
       LOG_IF(ERROR, !runningTmpPath.Remove()) << "Failed to delete dir, dir: " + runningTmpPath.ToString();
 
       // 将 THREAD_NUM 个秘钥文件合并为 1 个秘钥文件
@@ -385,11 +386,11 @@ void generateSecretFileScript() {
         ifs.close();
         // 删掉临时文件
         LOG_IF(ERROR, !subSecretPath.Remove()) << "Failed to delete file, file: " + subSecretPath.ToString();
-        LOG(INFO) << "Delete file successfuly, file: " + subSecretPath.ToString();
+        LOG(INFO) << "Delete file successfully, file: " + subSecretPath.ToString();
       }
       // 计算生成running秘钥文件的crc32校验值
       auto crc32Val = crc32c::Crc32c(bufferVec.data(), bufferVec.size());
-      LOG(INFO) << "Execute running secret crc32 successfuly, crc32c: " + std::to_string(crc32Val) +
+      LOG(INFO) << "Execute running secret crc32 successfully, crc32c: " + std::to_string(crc32Val) +
                      ", saveIdx: " + saveIdx;
       std::string saveFile = (runningSavePath / (saveIdx + ".bin")).ToString();
       std::ofstream ofs(saveFile, std::ios::out | std::ios::binary);
@@ -418,8 +419,8 @@ void generateSecretFileScript() {
         continue;
       }
       LOG(INFO) << "Redis zadd success, saveIdx: " + saveIdx + ", score_time: " + std::to_string(score_time);
+      redis.zadd(keyIndexCount, saveIdx, 0);
       if (source == shannonnet::SERVER_NAME) {
-        redis.zadd(shannonnet::KEY_SECRET_INDEX_COUNT_ZSET, saveIdx, 0);
         LOG_IF(ERROR, !redis.del(saveIdx)) << "Redis del failed, saveIdx: " + saveIdx;
       }
     } catch (const sw::redis::Error &e) {

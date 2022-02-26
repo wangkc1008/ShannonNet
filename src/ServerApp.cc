@@ -7,15 +7,14 @@
 
 namespace shannonnet {
 void serverRun() {
-  shannonnet::ServerComponent component;
-  OATPP_COMPONENT(std::shared_ptr<oatpp::web::server::HttpRouter>, router);
+  shannonnet::ServerComponent components;
+  auto router = components.httpRouter.getObject();
   router->addController(std::make_shared<SecretController>());
 
-  OATPP_COMPONENT(std::shared_ptr<oatpp::network::ConnectionHandler>, connectionHandler);
-  OATPP_COMPONENT(std::shared_ptr<oatpp::network::ServerConnectionProvider>, connectionProvider);
-  oatpp::network::Server server(connectionProvider, connectionHandler);
-
-  LOG(INFO) << "Server running on " << connectionProvider->getProperty("port").toString().getValue("") << ".";
+  oatpp::network::Server server(components.serverConnectionProvider.getObject(),
+                                components.serverConnectionHandler.getObject());
+  LOG(INFO) << "Server running on "
+            << components.serverConnectionProvider.getObject()->getProperty("port").toString().getValue("") << ".";
   LOG(INFO) << "Server nodeId is " << SERVER_NODE << ".";
   server.run();
 }

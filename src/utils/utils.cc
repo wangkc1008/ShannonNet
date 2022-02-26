@@ -68,7 +68,7 @@ std::vector<std::pair<std::string, uint32_t>> readFileSize(const std::string &di
       }
 
       uint16_t isValid = redis.zscore(redisKeyFmt, secretFilePath.FileName()).value();
-      if (isValid != shannonnet::NODE_SECRET_VALID) {
+      if (isValid != static_cast<uint16_t>(SECRET_STATUS::NODE_SECRET_VALID)) {
         LOG(WARNING) << "readFileSize secret is invalid, secret: " + secretFilePath.ToString() +
                           ", key: " + secretFilePath.FileName() + ", isValid: " + std::to_string(isValid);
         continue;

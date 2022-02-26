@@ -30,7 +30,13 @@ class ServerComponent {
   }());
 
   OATPP_CREATE_COMPONENT(std::shared_ptr<oatpp::data::mapping::ObjectMapper>, apiObjectMapper)
-  ([] { return oatpp::parser::json::mapping::ObjectMapper::createShared(); }());
+  ([] {
+    auto serializerConfig = oatpp::parser::json::mapping::Serializer::Config::createShared();
+    auto deserializerConfig = oatpp::parser::json::mapping::Deserializer::Config::createShared();
+    deserializerConfig->allowUnknownFields = false;
+    return oatpp::parser::json::mapping::ObjectMapper::createShared(serializerConfig, deserializerConfig);
+  }());
 };
 }  // namespace shannonnet
+
 #endif  // __SHANNON_NET_SERVER_COMPONENT_HPP__

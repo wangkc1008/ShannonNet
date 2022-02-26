@@ -4,11 +4,11 @@
 #include <iostream>
 #include <string>
 
-#define SN_DEBUG 1
+#define SN_DEBUG 0
 
 namespace shannonnet {
 // debug
-constexpr uint32_t DEBUG_SECRET_A_SIZE = 5 * 1024 * 1024;  // debug时单个密钥A大小
+constexpr uint32_t DEBUG_SECRET_A_SIZE = 64 * 1024 * 1024;  // debug时单个密钥A大小
 
 typedef uint16_t S_Type;
 // waiting secret
@@ -24,6 +24,11 @@ constexpr uint32_t N = M;
 constexpr uint16_t Q = 97;
 constexpr uint16_t EACH_NUM = 1024;                            // 每次发送1024个S_LEN长的秘钥
 constexpr uint32_t SECRET_FILE_SIZE = M * N * sizeof(S_Type);  // running secret大小
+// 2 => 5478ms 4 => 4511ms  6 => 4689ms  8 => 5187ms
+constexpr uint16_t RUNNING_THREAD_NUM = 4;  // 运行时加解密线程数量
+constexpr uint16_t CLIENT_THREAD_NUM = 4;   // 同时有多少client在获取密钥
+constexpr uint32_t PROGRESS =
+  SN_DEBUG ? (DEBUG_SECRET_A_SIZE / EACH_NUM / S_LEN) : (SECRET_A_SIZE / EACH_NUM / S_LEN);  // 进度
 
 // generate secret
 constexpr uint16_t THREAD_NUM = 2;   // 为每个有效密钥文件开启两个线程
@@ -61,13 +66,13 @@ constexpr char *KEY_GENERATE_SECRET_LIST = "shannonnet_gen_secret_list";  // 生
 constexpr char *KEY_SECRET_INDEX_TIME_ZSET =
   "shannonnet_%s_save_index_time_zset";  // shannonnet_{SERVER_NAME/CLIENT_NAME}_save_index_time_zset 保存生成完毕的秘钥
                                          // index => create_time
-constexpr char *KEY_SECRET_INDEX_COUNT_ZSET = "shannonnet_count_index_num_zset";  // 秘钥和读取次数 index => num
+constexpr char *KEY_SECRET_INDEX_COUNT_ZSET =
+  "shannonnet_%s_count_index_num_zset";  // shannonnet_{SERVER_NAME/CLIENT_NAME}_count_index_num_zset
+                                         // 秘钥和读取次数 index => num
 constexpr char *KEY_NODE_INDEX_VALID_ZSET =
   "shannonnet_node_%d_%d_index_valid_zset";  // shannonnet_node_{SERVER_NODE}_{CLIENT_NODE}_index_valid_zset
                                              // 每个节点下的所有有效的秘钥文件 index => valid: 1 valid; 2 invalid
-constexpr uint16_t NODE_SECRET_VALID = 1;
-constexpr uint16_t NODE_SECRET_INVALID = 2;
-
+enum class SECRET_STATUS : std::uint16_t { NODE_SECRET_VALID = 1, NODE_SECRET_INVALID = 2 };
 // init
 constexpr char *LOG_NAME_INIT = "shannonnet_init";
 
