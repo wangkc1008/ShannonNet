@@ -6,8 +6,7 @@
 #include <oatpp/web/client/HttpRequestExecutor.hpp>
 
 #include "src/ClientComponent.hpp"
-#include "src/Decrypt.h"
-#include "src/LWE.hpp"
+#include "src/main/Decrypt.h"
 #include "src/app/ClientApi.hpp"
 #include "src/common.h"
 #include "src/dto/DTOs.hpp"

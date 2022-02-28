@@ -47,11 +47,11 @@ add_executable(generator src/scripts/generateSecretFile.cc)
 add_dependencies(generator ${PROJECT_NAME})
 target_link_libraries(generator ${PROJECT_NAME})
 
-add_executable(oatpp_server src/ServerApp.cc)
+add_executable(oatpp_server src/ServerApp.cc src/main/Encrypt.cc)
 add_dependencies(oatpp_server ${PROJECT_NAME})
 target_link_libraries(oatpp_server ${PROJECT_NAME})
 
-add_executable(oatpp_client src/ClientApp.cc src/Decrypt.cc)
+add_executable(oatpp_client src/ClientApp.cc src/main/Decrypt.cc)
 add_dependencies(oatpp_client ${PROJECT_NAME})
 target_link_libraries(oatpp_client ${PROJECT_NAME})
 

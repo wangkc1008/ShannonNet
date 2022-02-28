@@ -14,5 +14,6 @@ static sw::redis::ConnectionOptions initRedisConnectionOptions() {
   // By default, the timeout is 0ms, i.e. never timeout and block until we send or receive successful.
   connectionOptions.socket_timeout = std::chrono::milliseconds(REDIS_SOCKET_TIME);
   return connectionOptions;
-}}  // namespace shannonnet
+}
+}  // namespace shannonnet
 #endif

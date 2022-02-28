@@ -8,7 +8,7 @@
 
 namespace shannonnet {
 // debug
-constexpr uint32_t DEBUG_SECRET_A_SIZE = 64 * 1024 * 1024;  // debug时单个密钥A大小
+constexpr uint32_t DEBUG_SECRET_A_SIZE = 5 * 1024 * 1024;  // debug时单个密钥A大小
 
 typedef uint16_t S_Type;
 // waiting secret
