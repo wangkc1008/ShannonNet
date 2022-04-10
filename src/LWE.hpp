@@ -132,7 +132,6 @@ std::vector<T> LWE<T>::message2bin(const std::string &message) {
 template <typename T>
 std::vector<std::string> LWE<T>::encrypt(const std::string &inMessage, const std::vector<T> &vec_A) {
   LOG_ASSERT(inMessage.size() != 0);
-
   Eigen::Map<MatrixXT> A(const_cast<T *>(vec_A.data()), M, N);
 
   std::vector<T> vec_s = generateSecret(N, 1);
@@ -146,7 +145,9 @@ std::vector<std::string> LWE<T>::encrypt(const std::string &inMessage, const std
 
   MatrixXT b(M, 1);
   std::function<T(T)> func = mod<T, Q>;
-  b = ((A * s).unaryExpr(func) + e + (ms * (T)(std::ceil(Q / 2)))).unaryExpr(func);
+
+  T halfQ = (T)(std::ceil(Q / 2));
+  b = ((A * s).unaryExpr(func) + e + ms * halfQ).unaryExpr(func);
 
   return {{(char *)s.data(), N * sizeof(T)}, {(char *)b.data(), M * sizeof(T)}};
 }
@@ -172,7 +173,7 @@ std::string LWE<T>::decrypt(const std::vector<T> &vec_A, const std::string &in_s
   std::vector<T> vec_res(b_.data(), b_.data() + b_.size());
   std::string cur_str;
   std::string out_message;
-  uint16_t halfQ = Q / 2;
+  T halfQ = Q / 2;
   for (auto &item : vec_res) {
     uint bit = 1;
     if (item < halfQ) {

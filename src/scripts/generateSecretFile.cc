@@ -238,14 +238,17 @@ void processBinSecret(uint threadIdx, uint fileNum, const std::string &saveIdx, 
  */
 void generateSecretFileScript() {
   LOG(INFO) << "PID: " << getpid();
+  ThreadPool tp(FILE_NUM * THREAD_NUM);
   auto redis = sw::redis::Redis(shannonnet::initRedisConnectionOptions());
   shannonnet::LWE<shannonnet::S_Type>::ptr lwePtr(new shannonnet::LWE<shannonnet::S_Type>());
+  
   std::stringstream ss;
   std::string source;
   std::string saveIdx;
   uint32_t randomNum = 0;
   uint16_t serverNodeId = 0;
   uint16_t clientNodeId = 0;
+  std::vector<std::future<void>> results;
   while (true) {
     try {
       // 接收消息队列
@@ -344,25 +347,29 @@ void generateSecretFileScript() {
       uint pathAndSizeVecSize = pathAndSizeVec.size();
       auto randomVec = generateRandom(pathAndSizeVecSize, source);
       // 为每个秘钥文件生成固定数量tmp秘钥文件
-      std::vector<std::thread> threads;
+      // std::vector<std::thread> threads;
+      results.clear();
+      results.shrink_to_fit();
       for (size_t fileIdx = 0; fileIdx < pathAndSizeVecSize; ++fileIdx) {
         for (size_t threadIdx = 0; threadIdx < THREAD_NUM; ++threadIdx) {
-          threads.emplace_back(processTmpSecret, pathAndSizeVec[fileIdx].first, fileIdx, threadIdx,
-                               randomVec[fileIdx * THREAD_NUM + threadIdx], saveIdx, source);
+          results.emplace_back(tp.enqueue(processTmpSecret, pathAndSizeVec[fileIdx].first, fileIdx, threadIdx,
+                                          randomVec[fileIdx * THREAD_NUM + threadIdx], saveIdx, source));
         }
       }
-      for (auto &thread : threads) {
-        thread.join();
+      for (auto &future : results) {
+        future.get();
       }
       LOG(INFO) << "Execute processTmpSecret successfully, saveIdx: " + saveIdx;
 
       // 根据线程id将n个秘钥文件生成的n个tmp秘钥 异或 合并为1个秘钥文件
-      std::vector<std::thread> threadsMerge;
+      results.clear();
+      results.shrink_to_fit();
+      // std::vector<std::thread> threadsMerge;
       for (size_t threadIdx = 0; threadIdx < THREAD_NUM; ++threadIdx) {
-        threadsMerge.emplace_back(processBinSecret, threadIdx, pathAndSizeVecSize, saveIdx, source);
+        results.emplace_back(tp.enqueue(processBinSecret, threadIdx, pathAndSizeVecSize, saveIdx, source));
       }
-      for (auto &threadMerge : threadsMerge) {
-        threadMerge.join();
+      for (auto &future : results) {
+        future.get();
       }
       LOG(INFO) << "Execute processBinSecret successfully, saveIdx: " + saveIdx;
       LOG_IF(ERROR, !runningTmpPath.Remove()) << "Failed to delete dir, dir: " + runningTmpPath.ToString();

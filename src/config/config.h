@@ -8,7 +8,7 @@
 
 namespace shannonnet {
 // debug
-constexpr uint32_t DEBUG_SECRET_A_SIZE = 5 * 1024 * 1024;  // debug时单个密钥A大小
+constexpr uint32_t DEBUG_SECRET_A_SIZE = 16 * 1024 * 1024;  // debug时单个密钥A大小
 
 typedef uint16_t S_Type;
 // waiting secret
@@ -24,9 +24,21 @@ constexpr uint32_t N = M;
 constexpr uint16_t Q = 97;
 constexpr uint16_t EACH_NUM = 1024;                            // 每次发送1024个S_LEN长的秘钥
 constexpr uint32_t SECRET_FILE_SIZE = M * N * sizeof(S_Type);  // running secret大小
-// 2 => 5478ms 4 => 4511ms  6 => 4689ms  8 => 5187ms
-constexpr uint16_t RUNNING_THREAD_NUM = 4;  // 运行时加解密线程数量
-constexpr uint16_t CLIENT_THREAD_NUM = 4;   // 同时有多少client在获取密钥
+/**
+ * client: 多少客户端同时请求
+ * server: 为每个客户端请求开启多少线程加密
+ * encrypt: 每1M加密耗时
+ * client server encrypt/s      S     E     C   total/s
+ *      1      1       9.64                     20480s
+ *      1      2       7.22  1.34 0.668 14.44   15360s
+ *      1      4       5.54  1.74 0.435 22.16   12288a
+ *      1      8       6.01  1.60 0.200 48.08   13312s
+ *      2      2       7.8                      8704s
+ *      2      4       7.5                      8192s
+ *      4      4       16                       8448s
+ */
+constexpr uint16_t RUNNING_THREAD_NUM = 2;  // 运行时加解密线程数量
+constexpr uint16_t CLIENT_THREAD_NUM = 2;   // 同时有多少client在获取密钥
 constexpr uint32_t PROGRESS =
   SN_DEBUG ? (DEBUG_SECRET_A_SIZE / EACH_NUM / S_LEN) : (SECRET_A_SIZE / EACH_NUM / S_LEN);  // 进度
 
@@ -58,7 +70,7 @@ constexpr char *LOG_NAME_CLIENT = "shannonnet_client";
 constexpr char *LOG_PATH = "/tmp/shannonnet/logs";
 
 // redis
-constexpr char *REDIS_HOST = "127.0.0.1";
+constexpr char *REDIS_HOST = "10.102.32.65";
 constexpr uint16_t REDIS_PORT = 6379;
 constexpr char *REDIS_PASSWORD = "admin";
 constexpr uint32_t REDIS_SOCKET_TIME = 2000;

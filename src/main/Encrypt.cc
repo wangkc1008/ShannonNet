@@ -1,6 +1,17 @@
 #include "src/main/Encrypt.h"
 
 namespace shannonnet {
+/**
+ * @brief 静态区块分发
+ * 
+ * @param lwePtr 
+ * @param data 
+ * @param progress 
+ * @param offset 
+ * @param secretA 
+ * @param runningThreadId 
+ * @return std::vector<SecretDto::Wrapper> 
+ */
 std::vector<SecretDto::Wrapper> encryptSecrets(const shannonnet::LWE<S_Type>::ptr &lwePtr, const char *data,
                                                uint32_t progress, uint32_t offset, const std::vector<S_Type> &secretA,
                                                const uint32_t runningThreadId) {
@@ -8,6 +19,7 @@ std::vector<SecretDto::Wrapper> encryptSecrets(const shannonnet::LWE<S_Type>::pt
     (runningThreadId != RUNNING_THREAD_NUM - 1) ? (offset + EACH_NUM / RUNNING_THREAD_NUM) : EACH_NUM;
   std::vector<SecretDto::Wrapper> vecSecretDto;
   vecSecretDto.reserve(currentNum - offset);
+
   for (size_t i = offset; i < currentNum; ++i) {
     auto vec = lwePtr->encrypt({data + i * S_LEN, S_LEN}, secretA);
     auto secret = SecretDto::createShared();
@@ -21,9 +33,9 @@ std::vector<SecretDto::Wrapper> encryptSecrets(const shannonnet::LWE<S_Type>::pt
 
 // shannonnet::MessageSecretDto::Wrapper Encrypt::msg_ = MessageSecretDto::createShared();
 
-Encrypt::Encrypt(const std::shared_ptr<oatpp::data::mapping::ObjectMapper> &jsonObjectMapper,
-                 const std::string &index, const std::string &logFmt, const std::string &runningSavePath,
-                 const std::string &waitingSavePath, const std::string &secretSavePath, const uint16_t nodeId)
+Encrypt::Encrypt(const std::shared_ptr<oatpp::data::mapping::ObjectMapper> &jsonObjectMapper, const std::string &index,
+                 const std::string &logFmt, const std::string &runningSavePath, const std::string &waitingSavePath,
+                 const std::string &secretSavePath, const uint16_t nodeId)
     : ShannonNet(jsonObjectMapper, index, logFmt, runningSavePath, waitingSavePath, secretSavePath), nodeId_(nodeId) {
   msg_->statusCode = 200;
   msg_->description = "success";
@@ -68,7 +80,6 @@ bool Encrypt::process(const uint32_t progress) {
   std::vector<char> bufferVec(S_LEN * EACH_NUM);
   ifs.read(bufferVec.data(), S_LEN * EACH_NUM);
   ifs.close();
-
   std::vector<std::future<std::vector<SecretDto::Wrapper>>> vec;
   for (size_t runningThreadId = 0; runningThreadId < RUNNING_THREAD_NUM; ++runningThreadId) {
     uint32_t offset = EACH_NUM / RUNNING_THREAD_NUM * runningThreadId;
