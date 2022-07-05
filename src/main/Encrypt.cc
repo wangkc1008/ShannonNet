@@ -1,20 +1,9 @@
 #include "src/main/Encrypt.h"
 
 namespace shannonnet {
-/**
- * @brief 静态区块分发
- * 
- * @param lwePtr 
- * @param data 
- * @param progress 
- * @param offset 
- * @param secretA 
- * @param runningThreadId 
- * @return std::vector<SecretDto::Wrapper> 
- */
 std::vector<SecretDto::Wrapper> encryptSecrets(const shannonnet::LWE<S_Type>::ptr &lwePtr, const char *data,
-                                               uint32_t progress, uint32_t offset, const std::vector<S_Type> &secretA,
-                                               const uint32_t runningThreadId) {
+                                               uint32_t progress, uint32_t offset, const uint32_t runningThreadId,
+                                               const std::vector<S_Type> &secretA) {
   uint32_t currentNum =
     (runningThreadId != RUNNING_THREAD_NUM - 1) ? (offset + EACH_NUM / RUNNING_THREAD_NUM) : EACH_NUM;
   std::vector<SecretDto::Wrapper> vecSecretDto;
@@ -31,15 +20,37 @@ std::vector<SecretDto::Wrapper> encryptSecrets(const shannonnet::LWE<S_Type>::pt
   return vecSecretDto;
 }
 
-// shannonnet::MessageSecretDto::Wrapper Encrypt::msg_ = MessageSecretDto::createShared();
+std::vector<SecretDto::Wrapper> encryptSecretsGPU(const shannonnet::LWE<S_Type>::ptr &lwePtr, const char *data,
+                                                  uint32_t index, uint32_t offset, const uint32_t runningThreadId,
+                                                  const torch::Tensor &secretA, uint32_t progress) {
+  uint32_t currentNum =
+    (runningThreadId != RUNNING_THREAD_NUM - 1) ? (offset + EACH_NUM / RUNNING_THREAD_NUM) : EACH_NUM;
+  std::vector<SecretDto::Wrapper> vecSecretDto;
+  vecSecretDto.reserve(currentNum - offset);
+  TIMERSTART(encrypt)
+  for (size_t i = offset; i < currentNum; ++i) {
+    auto vec = lwePtr->encryptGPU({data + i * S_LEN, S_LEN}, secretA, progress);
+    auto secret = SecretDto::createShared();
+    secret->secretS = vec[0];
+    secret->secretB = vec[1];
+    secret->progress = index++;
+    vecSecretDto.emplace_back(std::move(secret));
+  }
+  TIMERSTOP(encrypt)
+  return vecSecretDto;
+}
 
 Encrypt::Encrypt(const std::shared_ptr<oatpp::data::mapping::ObjectMapper> &jsonObjectMapper, const std::string &index,
                  const std::string &logFmt, const std::string &runningSavePath, const std::string &waitingSavePath,
-                 const std::string &secretSavePath, const uint16_t nodeId)
+                 const std::string &secretSavePath, const uint16_t nodeId, std::uint32_t progress)
     : ShannonNet(jsonObjectMapper, index, logFmt, runningSavePath, waitingSavePath, secretSavePath), nodeId_(nodeId) {
   msg_->statusCode = 200;
   msg_->description = "success";
   msg_->data = {};
+
+  secretA_ = torch::from_file(runningSavePath_, false, M * N, torch::TensorOptions().dtype(SAVE_GPU_TYPE))
+          .reshape({M, N})
+          .to(torch::Device{torch::kCUDA, static_cast<c10::DeviceIndex>(progress % GPU_NUM)}, GPU_TYPE);
 }
 
 Encrypt::~Encrypt(){};
@@ -83,17 +94,15 @@ bool Encrypt::process(const uint32_t progress) {
   std::vector<std::future<std::vector<SecretDto::Wrapper>>> vec;
   for (size_t runningThreadId = 0; runningThreadId < RUNNING_THREAD_NUM; ++runningThreadId) {
     uint32_t offset = EACH_NUM / RUNNING_THREAD_NUM * runningThreadId;
-    vec.emplace_back(std::async(std::launch::async, shannonnet::encryptSecrets, lwePtr_, bufferVec.data(),
-                                progress * EACH_NUM + offset, offset, secretA_, runningThreadId));
+    vec.emplace_back(std::async(std::launch::async, shannonnet::encryptSecretsGPU, lwePtr_, bufferVec.data(),
+                                progress * EACH_NUM + offset, offset, runningThreadId, secretA_, progress));
   }
-
   for (auto &futureItem : vec) {
     auto res = futureItem.get();  // 堵塞 直到就绪
     for (auto &item : res) {
       msg_->data->emplace_back(std::move(item));
     }
   }
-
   // 根据redis中的进度记录判断当前秘钥文件是否传输完毕
   redisProgress = redis_.zincrby(serverIndexCount, 1, index_);
   LOG_IF(ERROR, !redisProgress) << "Api getData incrby error, args: " << logFmt_;
@@ -146,5 +155,4 @@ bool Encrypt::move() {
             << ", afterPath: " << secretSavePath_;
   return true;
 }
-
 }  // namespace shannonnet

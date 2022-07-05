@@ -54,6 +54,9 @@ class LWE {
   std::vector<std::string> encrypt(const std::string &inMessage, const std::vector<T> &vec_A);
   std::string decrypt(const std::vector<T> &vec_A, const std::string &in_s, const std::string &in_b);
 
+  std::vector<std::string> encryptGPU(const std::string &inMessage, const torch::Tensor &A, uint32_t progress);
+  std::string decryptGPU(const torch::Tensor &A, const std::string &in_s, const std::string &in_b, uint32_t progress);
+
   // temporary function
   // generate waited secret
   void generateSecretFile(const std::string &waiting_secret_path, bool test = false) {
@@ -153,6 +156,28 @@ std::vector<std::string> LWE<T>::encrypt(const std::string &inMessage, const std
 }
 
 template <typename T>
+std::vector<std::string> LWE<T>::encryptGPU(const std::string &inMessage, const torch::Tensor &A, uint32_t progress) {
+  LOG_ASSERT(inMessage.size() != 0);
+  auto gpuId = static_cast<c10::DeviceIndex>(progress % GPU_NUM);
+  torch::Tensor s = torch::randint(Q, {N, 1}, torch::TensorOptions().dtype(GPU_TYPE).device(torch::kCUDA, gpuId));
+
+  torch::Tensor e = torch::randint(std::ceil(Q / 2) - 1, {M, 1},
+                                   torch::TensorOptions().dtype(SAVE_GPU_TYPE).device(torch::kCUDA, gpuId));
+
+  std::vector<T> vec_m = message2bin(inMessage);
+  torch::Tensor m =
+    torch::from_blob(vec_m.data(), {M, 1}, torch::kInt16).to(torch::Device(torch::kCUDA, gpuId), SAVE_GPU_TYPE);
+
+  T halfQ = (T)(std::ceil(Q / 2));
+  auto b = (((A % Q).matmul(s) % Q + e + m * halfQ) % Q).to(torch::Device{torch::kCPU, 0}, SAVE_GPU_TYPE);
+
+  s = s.to(torch::Device{torch::kCPU, 0}, SAVE_GPU_TYPE);
+  std::vector<std::string> result{{reinterpret_cast<char *>(s.data_ptr()), static_cast<uint64_t>(s.numel())},
+                                  {reinterpret_cast<char *>(b.data_ptr()), static_cast<uint64_t>(b.numel())}};
+  return result;
+}
+
+template <typename T>
 std::string LWE<T>::decrypt(const std::vector<T> &vec_A, const std::string &in_s, const std::string &in_b) {
   // 私钥
   Eigen::Map<MatrixXT> A(const_cast<T *>(vec_A.data()), M, N);
@@ -189,5 +214,35 @@ std::string LWE<T>::decrypt(const std::vector<T> &vec_A, const std::string &in_s
   }
   return out_message;
 }
+
+template <typename T>
+std::string shannonnet::LWE<T>::decryptGPU(const torch::Tensor &A, const std::string &in_s, const std::string &in_b,
+                                           uint32_t progress) {
+  auto gpuId = static_cast<c10::DeviceIndex>(progress % GPU_NUM);
+  torch::Tensor s =
+    torch::from_blob(const_cast<char *>(in_s.data()), {N, 1}, torch::TensorOptions().dtype(SAVE_GPU_TYPE))
+      .to(torch::Device{torch::kCUDA, gpuId}, GPU_TYPE);
+
+  torch::Tensor b =
+    torch::from_blob(const_cast<char *>(in_b.data()), {M, 1}, torch::TensorOptions().dtype(SAVE_GPU_TYPE))
+      .to(torch::Device{torch::kCUDA, gpuId});
+
+  T halfQ = Q / 2;
+  torch::Tensor b_ = ((b - (A % Q).matmul(s) % Q) % Q >= halfQ).to(torch::Device{torch::kCPU, 0}, torch::kInt8);
+  std::vector<int8_t> vec_res(b_.data_ptr<int8_t>(), b_.data_ptr<int8_t>() + b_.numel());
+
+  std::string cur_str;
+  std::string out_message;
+  for (auto &item : vec_res) {
+    cur_str += std::to_string(item);
+    if (cur_str.size() == BIT) {
+      std::bitset<BIT> bs(cur_str);
+      out_message += (char)(bs.to_ulong());
+      cur_str.clear();
+    }
+  }
+  return out_message;
+}
+
 }  // namespace shannonnet
 #endif  // __SHANNON_NET_LWE_H__

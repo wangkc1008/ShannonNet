@@ -1,5 +1,4 @@
 #include "crc32c/crc32c.h"
-#include "glog/logging.h"
 #include "src/LWE.hpp"
 #include "src/config/config.h"
 #include "time.h"
@@ -97,8 +96,7 @@ void test05(uint32_t progress) {
   msg_->description = "success";
   msg_->data = {};
 
-  std::ifstream ifs("/tmp/shannonnet/2685SShX61y1I28U_waited.bin",
-                    std::ios::in | std::ios::binary);
+  std::ifstream ifs("/tmp/shannonnet/2685SShX61y1I28U_waited.bin", std::ios::in | std::ios::binary);
   std::vector<char> bufferVec(shannonnet::S_LEN * shannonnet::EACH_NUM);
   ifs.read(bufferVec.data(), shannonnet::S_LEN * shannonnet::EACH_NUM);
   ifs.close();
@@ -136,8 +134,7 @@ void test06(uint32_t progress) {
   msg_->description = "success";
   msg_->data = {};
 
-  std::ifstream ifs("/tmp/shannonnet/2685SShX61y1I28U_waited.bin",
-                    std::ios::in | std::ios::binary);
+  std::ifstream ifs("/tmp/shannonnet/2685SShX61y1I28U_waited.bin", std::ios::in | std::ios::binary);
   std::vector<char> bufferVec(shannonnet::S_LEN * shannonnet::EACH_NUM);
   ifs.read(bufferVec.data(), shannonnet::S_LEN * shannonnet::EACH_NUM);
   ifs.close();
@@ -158,6 +155,142 @@ void test06(uint32_t progress) {
   TIMERSTOP(total)
 }
 
+void test_encrypt_cpu(uint32_t progress) {
+  TIMERSTART(total)
+  TIMERSTART(init)
+  shannonnet::MessageSecretDto::Wrapper msg_ = shannonnet::MessageSecretDto::createShared();
+  msg_->statusCode = 200;
+  msg_->description = "success";
+  msg_->data = {};
+
+  std::ifstream ifs("/home/wangkc/demo/shannonnet/secret_1.bin", std::ios::in | std::ios::binary);
+  std::vector<char> bufferVec(shannonnet::S_LEN * shannonnet::EACH_NUM);
+  ifs.read(bufferVec.data(), shannonnet::S_LEN * shannonnet::EACH_NUM);
+  ifs.close();
+  TIMERSTOP(init)
+  TIMERSTART(multi)
+  shannonnet::LWE<shannonnet::S_Type>::ptr lwe(new shannonnet::LWE<shannonnet::S_Type>());
+  std::vector<shannonnet::S_Type> secretA = lwe->generateSecretA("/home/wangkc/demo/shannonnet/secret_2.bin");
+  for (uint16_t i = 0; i < shannonnet::EACH_NUM; ++i) {
+    auto vec = lwe->encrypt({bufferVec.data() + i * shannonnet::S_LEN, shannonnet::S_LEN}, secretA);
+    auto secret = shannonnet::SecretDto::createShared();
+    secret->secretS = vec[0];
+    secret->secretB = vec[1];
+    secret->progress = progress++;
+    msg_->data->emplace_back(std::move(secret));
+  }
+  TIMERSTOP(multi)
+  std::cout << msg_->data->size() << std::endl;
+  TIMERSTOP(total)
+}
+
+void test_cpu() {
+  TIMERSTART(total)
+  TIMERSTART(init)
+  std::ifstream ifs("/home/wangkc/demo/shannonnet/secret_1.bin", std::ios::in | std::ios::binary);
+  std::vector<char> bufferVec(shannonnet::S_LEN * shannonnet::EACH_NUM);
+  ifs.read(bufferVec.data(), shannonnet::S_LEN * shannonnet::EACH_NUM);
+  ifs.close();
+  TIMERSTOP(init)
+  TIMERSTART(multi)
+  shannonnet::LWE<shannonnet::S_Type>::ptr lwe(new shannonnet::LWE<shannonnet::S_Type>());
+  std::vector<shannonnet::S_Type> secretA = lwe->generateSecretA("/home/wangkc/demo/shannonnet/secret_2.bin");
+  std::string msg{bufferVec.data() + 0 * shannonnet::S_LEN, shannonnet::S_LEN};
+  auto vec = lwe->encrypt(msg, secretA);
+  auto result = lwe->decrypt(secretA, vec[0], vec[1]);
+  assert(msg == result);
+  TIMERSTOP(multi)
+  TIMERSTOP(total)
+}
+
+void test_encrypt_gpu(uint32_t progress) {
+  TIMERSTART(total)
+  TIMERSTART(init)
+  shannonnet::MessageSecretDto::Wrapper msg_ = shannonnet::MessageSecretDto::createShared();
+  msg_->statusCode = 200;
+  msg_->description = "success";
+  msg_->data = {};
+
+  std::ifstream ifs("/home/wangkc/demo/shannonnet/secret_1.bin", std::ios::in | std::ios::binary);
+  std::vector<char> bufferVec(shannonnet::S_LEN * shannonnet::EACH_NUM);
+  ifs.read(bufferVec.data(), shannonnet::S_LEN * shannonnet::EACH_NUM);
+  ifs.close();
+  TIMERSTOP(init)
+  TIMERSTART(A)
+  shannonnet::LWE<shannonnet::S_Type>::ptr lwe(new shannonnet::LWE<shannonnet::S_Type>());
+  auto gpuId = static_cast<c10::DeviceIndex>(progress % shannonnet::GPU_NUM);
+  // std::vector<shannonnet::S_Type> secretA = lwe->generateSecretA("/home/wangkc/demo/shannonnet/secret_2.bin");
+  auto secretA = torch::from_file("/home/wangkc/demo/shannonnet/secret_2.bin", false, shannonnet::M * shannonnet::N,
+                                  torch::TensorOptions().dtype(torch::kInt16))
+                   .reshape({shannonnet::M, shannonnet::N})
+                   .to(torch::Device{torch::kCUDA, gpuId}, shannonnet::GPU_TYPE);
+  TIMERSTOP(A)
+  TIMERSTART(multi)
+  for (uint16_t i = 0; i < shannonnet::EACH_NUM; ++i) {
+    auto vec = lwe->encryptGPU({bufferVec.data() + i * shannonnet::S_LEN, shannonnet::S_LEN}, secretA, progress);
+    auto secret = shannonnet::SecretDto::createShared();
+    secret->secretS = vec[0];
+    secret->secretB = vec[1];
+    secret->progress = progress++;
+    msg_->data->emplace_back(std::move(secret));
+  }
+  TIMERSTOP(multi)
+  std::cout << msg_->data->size() << std::endl;
+  TIMERSTOP(total)
+}
+
+void test_gpu(uint32_t progress) {
+  TIMERSTART(total)
+  TIMERSTART(init)
+  std::ifstream ifs("/home/wangkc/demo/shannonnet/secret_1.bin", std::ios::in | std::ios::binary);
+  std::vector<char> bufferVec(shannonnet::S_LEN);
+  ifs.read(bufferVec.data(), shannonnet::S_LEN);
+  ifs.close();
+  shannonnet::LWE<shannonnet::S_Type>::ptr lwe(new shannonnet::LWE<shannonnet::S_Type>());
+  TIMERSTART(read)
+  auto secretA = torch::from_file("/home/wangkc/demo/shannonnet/secret_2.bin", false, shannonnet::M * shannonnet::N,
+                                  torch::TensorOptions().dtype(shannonnet::SAVE_GPU_TYPE))
+                   .reshape({shannonnet::M, shannonnet::N});
+  TIMERSTOP(read)
+  TIMERSTART(to)
+  auto gpuId = static_cast<c10::DeviceIndex>(progress % shannonnet::GPU_NUM);
+  secretA = secretA.to(torch::Device{torch::kCUDA, gpuId}, shannonnet::GPU_TYPE);
+  // torch::save(secretA, "/home/wangkc/demo/ShannonNet/tests/secretA.pt");
+  TIMERSTOP(to)
+  // TIMERSTART(load)
+  // torch::Tensor secretA2;
+  // torch::load(secretA2, "/home/wangkc/demo/ShannonNet/tests/secretA.pt");
+  // std::cout << secretA2.dtype() << "-" << secretA2.device() << std::endl;
+  // TIMERSTOP(load)
+  // std::cout << "**************secretA**************" << std::endl;
+  // std::cout << secretA << std::endl;
+  std::string msg{bufferVec.data(), shannonnet::S_LEN};
+  // std::cout << "**************msg**************" << std::endl;
+  // std::cout << msg << std::endl;
+  TIMERSTOP(init)
+  TIMERSTART(multi)
+  auto vec = lwe->encryptGPU(msg, secretA, progress);
+  // LOG(WARNING) << "s"
+  //              << "-" << crc32c::Crc32c(vec[0]);
+  // std::ofstream ofs_s("/home/wangkc/demo/ShannonNet/tmp/server_s.bin", std::ios::out | std::ios::binary);
+  // ofs_s.write(vec[0].data(), vec[0].size());
+  // ofs_s.close();
+  // LOG(WARNING) << "b"
+  //              << "-" << crc32c::Crc32c(vec[1]);
+  // std::ofstream ofs_b("/home/wangkc/demo/ShannonNet/tmp/server_b.bin", std::ios::out | std::ios::binary);
+  // ofs_b.write(vec[1].data(), vec[1].size());
+  // ofs_b.close();
+  // std::cout << "**************vec[0]**************" << std::endl;
+  // std::cout << vec[0] << std::endl;
+  // std::cout << "**************vec[1]**************" << std::endl;
+  // std::cout << vec[1] << std::endl;
+  auto result = lwe->decryptGPU(secretA, vec[0], vec[1], progress);
+  // std::cout << "**************result**************" << std::endl;
+  // std::cout << result << std::endl;
+  assert(msg == result);
+  TIMERSTOP(multi)
+  TIMERSTOP(total)
+}
 
 /**
  * @brief
@@ -168,10 +301,10 @@ void test06(uint32_t progress) {
  *  4 out halfQ functional          277.721s  加速比 1.737
  *  4 out halfQ lambda              294.037s  加速比 1.64
  *  8 out halfQ functional          300.733s  加速比 1.60
- * 
- * @param argc 
- * @param argv 
- * @return int 
+ *
+ * @param argc
+ * @param argv
+ * @return int
  */
 int main(int argc, char **argv) {
   // InitLog(shannonnet::LOG_NAME);
@@ -186,11 +319,13 @@ int main(int argc, char **argv) {
   // // lwe->generate_secret_file();
   // time_t endTimestamp = time(nullptr);
   // std::cout << endTimestamp - startTimestamp << std::endl;
-  std::cout << getpid() << std::endl;
-  std::cout << gettid() << std::endl;
+  // std::cout << getpid() << std::endl;
+  // std::cout << gettid() << std::endl;
   TIMERSTART(main)
+  // test_gpu();
   for (size_t i = 0; i < 50; ++i) {
-    test05(i);
+    // test_encrypt_gpu(i);
+    test_gpu(i);
   }
   TIMERSTOP(main)
   return 0;

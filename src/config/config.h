@@ -4,6 +4,8 @@
 #include <iostream>
 #include <string>
 
+#include "torch/torch.h"
+
 #define SN_DEBUG 0
 
 namespace shannonnet {
@@ -11,6 +13,10 @@ namespace shannonnet {
 constexpr uint32_t DEBUG_SECRET_A_SIZE = 16 * 1024 * 1024;  // debug时单个密钥A大小
 
 typedef uint16_t S_Type;
+constexpr auto GPU_TYPE = torch::kFloat32;
+constexpr auto SAVE_GPU_TYPE = torch::kUInt8;
+constexpr uint16_t GPU_NUM = 2;
+
 // waiting secret
 constexpr uint32_t SECRET_A_SIZE = 1024 * 1024 * 1024;  // 单个密钥A的大小为 => 1073741824 Bytes
 constexpr uint16_t SAVE_INDEX_LEN = 16;                 // 密钥的全局唯一index长度
@@ -23,7 +29,9 @@ constexpr uint32_t M = S_LEN * BIT;  // 1024 * 8 = 8192
 constexpr uint32_t N = M;
 constexpr uint16_t Q = 97;
 constexpr uint16_t EACH_NUM = 1024;                            // 每次发送1024个S_LEN长的秘钥
-constexpr uint32_t SECRET_FILE_SIZE = M * N * sizeof(S_Type);  // running secret大小
+constexpr uint32_t SECRET_FILE_SIZE = M * N;                   // running secret大小
+// constexpr uint32_t SECRET_FILE_SIZE = M * N * sizeof(S_Type);  // running secret大小
+
 /**
  * client: 多少客户端同时请求
  * server: 为每个客户端请求开启多少线程加密
@@ -61,7 +69,7 @@ constexpr char *LOG_NAME_SERVER = "shannonnet_server";
 
 // client
 constexpr char *CLIENT_NAME = "client";
-constexpr char *CLIENT_ADDRESS = "10.102.32.192";
+constexpr char *CLIENT_ADDRESS = "10.102.32.65";
 constexpr uint16_t CLIENT_PORT = 80;
 constexpr uint16_t CLIENT_NODE = 1;
 constexpr char *LOG_NAME_CLIENT = "shannonnet_client";
@@ -85,6 +93,7 @@ constexpr char *KEY_NODE_INDEX_VALID_ZSET =
   "shannonnet_node_%d_%d_index_valid_zset";  // shannonnet_node_{SERVER_NODE}_{CLIENT_NODE}_index_valid_zset
                                              // 每个节点下的所有有效的秘钥文件 index => valid: 1 valid; 2 invalid
 enum class SECRET_STATUS : std::uint16_t { NODE_SECRET_VALID = 1, NODE_SECRET_INVALID = 2 };
+
 // init
 constexpr char *LOG_NAME_INIT = "shannonnet_init";
 

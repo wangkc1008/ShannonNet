@@ -23,11 +23,44 @@ std::vector<std::string> decryptSecrets(const shannonnet::LWE<S_Type>::ptr &lweP
   return secretVec;
 }
 
+std::vector<std::string> decryptSecretsGPU(const shannonnet::LWE<S_Type>::ptr &lwePtr,
+                                           const std::vector<shannonnet::SecretDto::Wrapper>::iterator &begin,
+                                           const uint32_t runningThreadId, const torch::Tensor &secretA, uint32_t progress) {
+  uint64_t currentNum = (runningThreadId != RUNNING_THREAD_NUM - 1)
+                          ? EACH_NUM / RUNNING_THREAD_NUM
+                          : (EACH_NUM - runningThreadId * EACH_NUM / RUNNING_THREAD_NUM);
+  std::vector<std::string> secretVec;
+  secretVec.reserve(currentNum);
+  auto end = begin + currentNum;
+  TIMERSTART(decrypt)
+  for (auto iter = begin; iter != end; ++iter) {
+    auto secretS = (*iter)->secretS.getValue("");
+    auto secretB = (*iter)->secretB.getValue("");
+    LOG_ASSERT(!secretS.empty());
+    LOG_ASSERT(!secretB.empty());
+    // 解密
+    auto secretData = lwePtr->decryptGPU(secretA, secretS, secretB, progress);
+    LOG_ASSERT(!secretData.empty());
+    secretVec.emplace_back(std::move(secretData));
+  }
+  TIMERSTOP(decrypt)
+  return secretVec;
+}
+
 Decrypt::Decrypt(const std::shared_ptr<shannonnet::ClientApi> &client,
                  const std::shared_ptr<oatpp::data::mapping::ObjectMapper> &jsonObjectMapper, const std::string &index,
                  const std::string &logFmt, const std::string &runningSavePath, const std::string &waitingSavePath,
                  const std::string &secretSavePath)
-    : ShannonNet(jsonObjectMapper, index, logFmt, runningSavePath, waitingSavePath, secretSavePath), client_(client) {}
+    : ShannonNet(jsonObjectMapper, index, logFmt, runningSavePath, waitingSavePath, secretSavePath), client_(client) {
+    TIMERSTART(load)
+    for (int i = 0; i < GPU_NUM; ++i) {
+      secretA_.emplace_back(
+        torch::from_file(runningSavePath_, false, M * N, torch::TensorOptions().dtype(SAVE_GPU_TYPE))
+          .reshape({M, N})
+          .to(torch::Device{torch::kCUDA, static_cast<c10::DeviceIndex>(i)}, GPU_TYPE));
+    }
+    TIMERSTOP(load)
+}
 
 Decrypt::~Decrypt() {}
 
@@ -51,8 +84,8 @@ bool Decrypt::process(const uint32_t progress) {
   std::vector<std::future<std::vector<std::string>>> vec;
   for (size_t runningThreadId = 0; runningThreadId < RUNNING_THREAD_NUM; ++runningThreadId) {
     uint32_t offset = EACH_NUM / RUNNING_THREAD_NUM * runningThreadId;
-    vec.push_back(std::async(std::launch::async, shannonnet::decryptSecrets, lwePtr_, secret->begin() + offset,
-                             runningThreadId, secretA_));
+    vec.push_back(std::async(std::launch::async, shannonnet::decryptSecretsGPU, lwePtr_, secret->begin() + offset,
+                             runningThreadId, secretA_[progress % GPU_NUM], progress));
   }
 
   Path waitingSavePath(waitingSavePath_);
@@ -90,7 +123,8 @@ bool Decrypt::gather(const uint32_t progress) {
     std::ifstream ifs(waitingSaveFile.ToString(), std::ios::in | std::ios::binary);
     ifs.read(bufferVec.data() + num * EACH_NUM * S_LEN, EACH_NUM * S_LEN);
     ifs.close();
-    LOG_IF(ERROR, !waitingSaveFile.Remove()) << "Api client delete file failed, file: " << waitingSaveFile.ToString();
+    LOG_IF(ERROR, !waitingSaveFile.Remove()) << "Api client delete file failed, file: " <<
+    waitingSaveFile.ToString();
   }
   // 发送来的crc32值
   std::string crc32Send{bufferVec.data() + bufferVec.size() - CRC_LEN, CRC_LEN};

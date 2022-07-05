@@ -7,6 +7,7 @@ namespace shannonnet {
 class Decrypt : public ShannonNet {
  private:
   std::shared_ptr<shannonnet::ClientApi> client_;
+  std::vector<torch::Tensor> secretA_;
 
  public:
   typedef std::shared_ptr<Decrypt> ptr;

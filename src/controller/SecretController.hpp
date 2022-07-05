@@ -10,9 +10,9 @@
 #include <oatpp/core/macro/component.hpp>
 #include <oatpp/web/server/api/ApiController.hpp>
 
-#include "src/main/Encrypt.h"
 #include "src/common.h"
 #include "src/dto/DTOs.hpp"
+#include "src/main/Encrypt.h"
 
 namespace shannonnet {
 #include OATPP_CODEGEN_BEGIN(ApiController)
@@ -178,12 +178,11 @@ class SecretController : public oatpp::web::server::api::ApiController {
                  << ", secretSavePath: " << secretSavePath.ToString() << ", json: " << jsonMapperData->c_str();
       return createDtoResponse(Status::CODE_500, msg);
     }
-  
+
     // 加密  累计 EACH_NUM 次
     shannonnet::Encrypt::ptr encrypt(new shannonnet::Encrypt(jsonObjectMapper, index, argsMsg,
                                                              runningSavePath.ToString(), waitingSavePath.ToString(),
-                                                             secretSavePath.ToString(), nodeId));
-  
+                                                             secretSavePath.ToString(), nodeId, progress));
     bool flag = encrypt->process(progress);
     auto encryptMsg = encrypt->getMsg();
     if (!flag) {

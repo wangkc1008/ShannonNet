@@ -3,9 +3,9 @@
 
 #include <future>
 #include <iostream>
+#include <mutex>
 #include <string>
 #include <vector>
-#include <mutex>
 
 #include "boost/format.hpp"
 
@@ -28,10 +28,10 @@ class ShannonNet {
   std::string runningSavePath_;
   std::string waitingSavePath_;
   std::string secretSavePath_;
-  std::vector<S_Type> secretA_;
+  // std::vector<S_Type> secretA_;
 
  public:
-  typedef std::shared_ptr<ShannonNet> ptr;
+  using ptr = std::shared_ptr<ShannonNet>;
 
   ShannonNet(const std::shared_ptr<oatpp::data::mapping::ObjectMapper> &jsonObjectMapper, const std::string &index,
              const std::string &logFmt, const std::string &runningSavePath, const std::string &waitingSavePath,
@@ -41,11 +41,11 @@ class ShannonNet {
         logFmt_(logFmt),
         runningSavePath_(runningSavePath),
         waitingSavePath_(waitingSavePath),
-        secretSavePath_(secretSavePath) {
-    secretA_ = lwePtr_->generateSecretA(runningSavePath_);
-  };
+        secretSavePath_(secretSavePath){
+    // secretA_ = lwePtr_->generateSecretA(runningSavePath_);
+  } ;
 
-  virtual ~ShannonNet() {};                            // 虚析构
+  virtual ~ShannonNet(){};                            // 虚析构
   bool virtual process(const uint32_t progress) = 0;  // 纯虚函数 子类必须重写
 };
 }  // namespace shannonnet

@@ -237,7 +237,7 @@ void processBinSecret(uint threadIdx, uint fileNum, const std::string &saveIdx, 
  *
  */
 void generateSecretFileScript() {
-  LOG(INFO) << "PID: " << getpid();
+  // LOG(INFO) << "PID: " << getpid();
   ThreadPool tp(FILE_NUM * THREAD_NUM);
   auto redis = sw::redis::Redis(shannonnet::initRedisConnectionOptions());
   shannonnet::LWE<shannonnet::S_Type>::ptr lwePtr(new shannonnet::LWE<shannonnet::S_Type>());

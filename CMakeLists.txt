@@ -4,6 +4,7 @@ project(ShannonNet)
 # 显示构建过程中更详细的错误信息
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_CXX_FLAGS "$ENV{CXXFLAGS} -rdynamic -O3 -g -std=c++14 -pthread -Wall -Werror -Wno-unused-function -Wno-unused-local-typedefs -Wno-unused-variable -Wno-write-strings -Wno-unused-result -Wno-sign-compare")
+add_definitions(-DC10_USE_GLOG)
 
 # 引入conan
 set(CONAN_DISABLE_CHECK_COMPILER ON)
@@ -22,10 +23,14 @@ set(LIB_SRC
     src/utils/utils.cc
 )
 
+set(Torch_DIR /home/wangkc/demo/libtorch/share/cmake/Torch)
+find_package(Torch REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+
 include_directories(${CMAKE_SOURCE_DIR}/)
 add_library(${PROJECT_NAME} STATIC ${LIB_SRC})
 # 生成libShannonNet.a需要链接其他库文件
-target_link_libraries(${PROJECT_NAME} ${CONAN_LIBS})
+target_link_libraries(${PROJECT_NAME} ${CONAN_LIBS} ${TORCH_LIBRARIES})
 
 # 由tests/lwe_test.cc生成可执行文件lwe_test
 add_executable(lwe_test tests/lwe_test.cc)
@@ -35,13 +40,13 @@ add_dependencies(lwe_test ${PROJECT_NAME})
 # lwe_test生成需要链接LIBS中的动态/静态库文件相当于编译时的-l
 target_link_libraries(lwe_test ${PROJECT_NAME})
 
-add_executable(redis_test tests/redis_test.cc)
-add_dependencies(redis_test ${PROJECT_NAME})
-target_link_libraries(redis_test ${PROJECT_NAME})
+# add_executable(redis_test tests/redis_test.cc)
+# add_dependencies(redis_test ${PROJECT_NAME})
+# target_link_libraries(redis_test ${PROJECT_NAME})
 
-add_executable(json_test tests/json_test.cc)
-add_dependencies(json_test ${PROJECT_NAME})
-target_link_libraries(json_test ${PROJECT_NAME})
+# add_executable(json_test tests/json_test.cc)
+# add_dependencies(json_test ${PROJECT_NAME})
+# target_link_libraries(json_test ${PROJECT_NAME})
 
 add_executable(generator src/scripts/generateSecretFile.cc)
 add_dependencies(generator ${PROJECT_NAME})

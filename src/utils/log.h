@@ -2,7 +2,6 @@
 #define __SHANNON_NET_LOG_H__
 
 #include "glog/logging.h"
-
 #include "src/config/config.h"
 #include "src/utils/path.h"
 

@@ -9,12 +9,13 @@ class Encrypt : public ShannonNet {
   uint16_t nodeId_;
   shannonnet::MessageSecretDto::Wrapper msg_ = MessageSecretDto::createShared();
   sw::redis::Redis redis_ = sw::redis::Redis(shannonnet::initRedisConnectionOptions());
+  torch::Tensor secretA_;
 
  public:
   typedef std::shared_ptr<Encrypt> ptr;
-  Encrypt(const std::shared_ptr<oatpp::data::mapping::ObjectMapper> &jsonObjectMapper,
-          const std::string &index, const std::string &logFmt, const std::string &runningSavePath,
-          const std::string &waitingSavePath, const std::string &secretSavePath, const uint16_t nodeId);
+  Encrypt(const std::shared_ptr<oatpp::data::mapping::ObjectMapper> &jsonObjectMapper, const std::string &index,
+          const std::string &logFmt, const std::string &runningSavePath, const std::string &waitingSavePath,
+          const std::string &secretSavePath, const uint16_t nodeId, std::uint32_t progress);
   ~Encrypt();
 
   bool process(const uint32_t progress) override;
