@@ -21,7 +21,7 @@ conan install ..<br>
 cmake ..<br>
 make<br>
 ## 运行
-目前已完成<b>单节点</b>*<b>CPU</b>预生成秘钥、加解密、http传输密钥和传输验证功能，多节点可同步扩展 <br>
+目前已完成<b>单/多节点</b> <b>CPU/GPU</b>预生成秘钥、加解密、http传输密钥和传输验证功能 <br>
 ### 执行文件
 <b>按照以下顺序执行</b><br>
 ```
@@ -38,8 +38,8 @@ bin/oatpp_client    客户端可执行文件
 ### 项目初始化脚本<br>
 init/init.cc<br>
 ```
-	1. 创建秘钥存储目录.<br>
-	2. 为各节点生成初始化秘钥, 存储在secrets/, 服务端-客户端下的秘钥文件相同.<br>
+	1. 创建秘钥存储目录.
+	2. 为各节点生成初始化秘钥, 存储在secrets/, 服务端-客户端下的秘钥文件相同.
 	3. 删除redis下的相关key并添加初始化数据.
 ```
 
@@ -48,25 +48,12 @@ src/scripts/generateSecretFile.cc<br>
 ```
 队列消息格式
 {
-	{
-		"source", 
-		"server/client"
-	}, {
-		"randomNum",
-		123456789
-	}, {
-		"index",
-		"aM96UXFs4WKKC7nY"
-	}, {
-		"serverNodeId",
-		0
-	}, {
-		"clientNodeId",
-		1
-	}, {
-		"value",
-		""
-	}
+	"source": "server/client",
+	"randomNum": 123456789,
+	"index": "aM96UXFs4WKKC7nY",
+	"serverNodeId": 0,
+	"clientNodeId": 1,
+	"value": ""
 }
 function:
 	1. 接收、校验队列消息.
@@ -194,7 +181,7 @@ brief:
 客户端秘钥传输接口文件
 
 function:
-  1. 判断是否要更新秘钥 (todo)
+  1. 判断是否要更新秘钥
   2. 调预生成秘钥接口
   3. push队列消息, 生成client秘钥
   4. 循环判断server和client秘钥是否生成完毕
